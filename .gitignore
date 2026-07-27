@@ -1,0 +1,7 @@
+.env
+session/
+cookies.json
+node_modules/
+credentials.json
+.DS_Store
+*.png
