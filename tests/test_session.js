@@ -5,12 +5,14 @@ const path = require("node:path");
 async function main() {
   const cookiesPath = path.join(
     __dirname,
+    "..",
     "session",
     "cookies.json"
   );
 
   const localStoragePath = path.join(
     __dirname,
+    "..",
     "session",
     "localStorage.json"
   );

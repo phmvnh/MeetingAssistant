@@ -1,7 +1,16 @@
 .env
+.env.*
+!.env.example
 session/
 cookies.json
 node_modules/
 credentials.json
+credentials.json.json
+oauth_credentials.json
+.google-oauth-token.json
+.google-oauth-token.json.*.tmp
+meeting-docs/
+PLAN*.md
+KE_HOACH_*.md
 .DS_Store
 *.png

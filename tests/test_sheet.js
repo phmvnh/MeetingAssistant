@@ -1,6 +1,6 @@
 require("dotenv").config();
 
-const { getSheetsClient } = require("./src/sheets");
+const { getSheetsClient } = require("../src/sheets");
 
 async function main() {
   const spreadsheetId = process.env.SPREADSHEET_ID;

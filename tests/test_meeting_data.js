@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const {
   scrapeMeetings,
-} = require("./src/scraper");
+} = require("../src/scraper");
 
 async function main() {
   const result = await scrapeMeetings();

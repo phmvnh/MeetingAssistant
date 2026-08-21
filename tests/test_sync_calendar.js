@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const {
   syncToCalendar,
-} = require("./src/sync/syncToCalendar");
+} = require("../src/sync/syncToCalendar");
 
 async function main() {
   const result =

@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meeting Assistant</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">REALTIME MEETING INTELLIGENCE</p>
+          <h1>AI Meeting Assistant</h1>
+        </div>
+        <div class="service-status" aria-label="Trạng thái cấu hình">
+          <span id="gemini-status" class="status-chip status-pending">Gemini</span>
+          <span id="google-status" class="status-chip status-pending">Google</span>
+          <div id="google-account" class="google-account hidden" aria-live="polite">
+            <strong id="google-account-email" class="google-account-email"></strong>
+            <span id="google-account-detail" class="google-account-detail"></span>
+          </div>
+          <div class="google-account-actions">
+            <button id="google-auth-button" class="text-button hidden" type="button">
+              Đăng nhập Google
+            </button>
+            <button id="google-switch-button" class="text-button hidden" type="button">
+              Đổi tài khoản
+            </button>
+            <button
+              id="google-disconnect-button"
+              class="text-button danger hidden"
+              type="button"
+            >
+              Ngắt kết nối
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <aside class="setup-panel card">
+          <div class="section-heading">
+            <span class="step-number"></span>
+            <div>
+              <h2>Thiết lập cuộc họp</h2>
+              <p>Chọn nguồn âm thanh trước khi bắt đầu.</p>
+            </div>
+          </div>
+
+          <form id="meeting-form">
+            <label class="field-label" for="meeting-title">Tên cuộc họp</label>
+            <input
+              id="meeting-title"
+              name="title"
+              type="text"
+              maxlength="160"
+              autocomplete="off"
+            />
+
+            <label class="field-label" for="meeting-source">Nguồn cuộc họp</label>
+            <select id="meeting-source" name="source">
+              <option value="room">Phòng họp trực tiếp</option>
+              <option value="meet">Google Meet</option>
+              <option value="teams">Microsoft Teams</option>
+              <option value="other">Nguồn khác</option>
+            </select>
+
+            <label class="field-label" for="microphone">Microphone</label>
+            <div class="inline-field">
+              <select id="microphone" name="microphone"></select>
+              <button id="refresh-devices" class="icon-button" type="button" title="Làm mới">
+                ↻
+              </button>
+            </div>
+
+            <label class="field-label" for="keywords">Từ khóa chuyên ngành</label>
+            <input
+              id="keywords"
+              name="keywords"
+              type="text"
+              placeholder="Tên từ khóa - cách nhau bằng dấu phẩy"
+              autocomplete="off"
+            />
+
+            <label class="check-row">
+              <input id="system-audio" type="checkbox" />
+              <span>
+                <strong>Nghe cả âm thanh máy tính</strong>
+                <small>Dùng cho Meet/Teams trên Windows.</small>
+              </span>
+            </label>
+
+            <label class="check-row">
+              <input id="create-calendar" type="checkbox" checked />
+              <span>
+                <strong>Tạo event nếu chưa có</strong>
+                <small>Nếu tìm thấy event gần thời gian này, ứng dụng sẽ cập nhật event đó.</small>
+              </span>
+            </label>
+
+            <button id="start-button" class="primary-button" type="submit">
+              <span class="record-dot"></span>
+              Bắt đầu lắng nghe
+            </button>
+          </form>
+
+          <div id="config-warning" class="notice warning hidden"></div>
+        </aside>
+
+        <section class="live-panel card">
+          <div class="live-header">
+            <div>
+              <p class="eyebrow">LIVE TRANSCRIPT</p>
+              <div class="listening-line">
+                <span id="live-indicator" class="live-indicator idle"></span>
+                <h2 id="live-status">Sẵn sàng</h2>
+              </div>
+            </div>
+            <div id="timer" class="timer">00:00:00</div>
+          </div>
+
+          <div class="audio-meter" aria-label="Mức âm thanh">
+            <div id="audio-level" class="audio-level"></div>
+          </div>
+
+          <div id="transcript" class="transcript" aria-live="polite">
+            <div id="empty-transcript" class="empty-state">
+              <span class="empty-icon">“</span>
+              <h3>Transcript sẽ xuất hiện tại đây</h3>
+              <p>Ứng dụng chỉ truyền âm thanh khi bạn bấm Bắt đầu.</p>
+            </div>
+          </div>
+
+          <div class="meeting-controls">
+            <button id="pause-button" class="secondary-button" type="button" disabled>
+              Tạm dừng
+            </button>
+            <button id="done-button" class="done-button" type="button" disabled>
+              Done · Tạo biên bản
+            </button>
+            <button id="cancel-button" class="text-button danger" type="button" disabled>
+              Hủy
+            </button>
+          </div>
+
+          <div id="progress-box" class="progress-box hidden">
+            <div class="spinner"></div>
+            <div>
+              <strong>Đang hoàn thiện cuộc họp</strong>
+              <p id="progress-message">Đang xử lý…</p>
+            </div>
+          </div>
+
+          <div id="error-box" class="notice error hidden"></div>
+        </section>
+      </main>
+
+      <section id="result-panel" class="result-panel card hidden">
+        <div class="result-header">
+          <div>
+            <p class="eyebrow">MEETING DOCUMENT</p>
+            <h2 id="result-title">Cuộc họp chưa đặt tên</h2>
+          </div>
+          <div class="result-actions">
+            <button id="open-local-button" class="secondary-button" type="button">
+              Mở bản cục bộ
+            </button>
+            <button id="open-doc-button" class="primary-button compact hidden" type="button">
+              Mở Google Docs
+            </button>
+            <button id="open-sheet-button" class="text-button hidden" type="button">
+              Mở Google Sheet
+            </button>
+            <button id="open-calendar-button" class="text-button hidden" type="button">
+              Mở Calendar
+            </button>
+          </div>
+        </div>
+
+        <div class="result-grid">
+          <article>
+            <h3>Tóm tắt</h3>
+            <p id="result-summary"></p>
+
+            <h3>Nội dung chính</h3>
+            <ul id="result-key-points"></ul>
+
+            <h3>Quyết định</h3>
+            <ul id="result-decisions"></ul>
+          </article>
+
+          <article>
+            <h3>Công việc cần thực hiện</h3>
+            <div id="result-actions-list" class="action-list"></div>
+
+            <h3>Vấn đề chưa giải quyết</h3>
+            <ul id="result-questions"></ul>
+          </article>
+        </div>
+
+        <div id="result-warnings" class="notice warning hidden"></div>
+      </section>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

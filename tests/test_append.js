@@ -1,6 +1,6 @@
 require("dotenv").config();
 
-const { appendMeetings } = require("./src/sheets");
+const { appendMeetings } = require("../src/sheets");
 
 async function main() {
   const meetings = [

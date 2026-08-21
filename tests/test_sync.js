@@ -2,7 +2,7 @@ require("dotenv").config();
 
 const {
   syncMeetings,
-} = require("./src/sheets");
+} = require("../src/sheets");
 
 async function main() {
   const spreadsheetId =

@@ -1,10 +1,13 @@
 {
-  "name": "genspark-automation",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "name": "meeting-assistant-desktop",
+  "version": "2.1.0",
+  "description": "Ứng dụng desktop ghi nhận âm thanh trực tiếp, tạo biên bản và đồng bộ Google Workspace.",
+  "main": "src/desktop/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node scripts/start-electron.js",
+    "dev": "node scripts/start-electron.js",
+    "check": "node scripts/check.js",
+    "test": "node scripts/run-tests.js"
   },
   "keywords": [],
   "author": "",
@@ -13,6 +16,9 @@
   "dependencies": {
     "dotenv": "^17.4.2",
     "googleapis": "^173.0.0",
-    "puppeteer": "^25.3.0"
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "electron": "^43.2.0"
   }
 }

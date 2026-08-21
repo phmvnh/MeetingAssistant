@@ -2,11 +2,11 @@ require("dotenv").config();
 
 const {
   getMeetingsWithoutCalendarEvent,
-} = require("./src/sheets");
+} = require("../src/sheets");
 
 const {
   getSheetConfig,
-} = require("./src/config");
+} = require("../src/config");
 
 async function main() {
   const {

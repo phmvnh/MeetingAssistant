@@ -3,11 +3,11 @@ require("dotenv").config();
 const {
   createCalendarEvent,
   findEventByMeetingId,
-} = require("./src/calendar");
+} = require("../src/calendar");
 
 const {
   getCalendarConfig,
-} = require("./src/config");
+} = require("../src/config");
 
 async function testExistingMeetingId() {
   const { calendarId } =

@@ -3,7 +3,7 @@ const {
   DEFAULT_TIME_ZONE,
   parseMeetingDate,
   mapMeetingToCalendarEvent,
-} = require("./src/mapper/meetingMapper");
+} = require("../src/mapper/meetingMapper");
 
 function testValidMeeting() {
   const meeting = {
