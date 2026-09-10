@@ -3,7 +3,7 @@ const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const projectRoot = path.join(__dirname, "..");
-const excludedDirectories = new Set([".git", "node_modules"]);
+const excludedDirectories = new Set([".git", "node_modules", "whisper.cpp"]);
 
 function collectJavaScriptFiles(directory, output = []) {
   for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {

@@ -2,7 +2,7 @@ const { google } = require("googleapis");
 
 const { resolveMeetingTitle } = require("../meeting/meetingTitle");
 
-const APP_SPREADSHEET_NAME = "Meeting Log";
+const APP_SPREADSHEET_NAME = "Meeting Log Assistant";
 const APP_SPREADSHEET_PROPERTY_KEY = "meetingAssistant";
 const APP_SPREADSHEET_PROPERTY_VALUE = "meeting-log-v1";
 const GOOGLE_SPREADSHEET_MIME_TYPE =
@@ -112,7 +112,16 @@ function quoteSheetName(sheetName) {
 }
 
 function spreadsheetUrl(spreadsheetId) {
-  return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+  const normalizedSpreadsheetId = spreadsheetId?.trim();
+
+  if (
+    !normalizedSpreadsheetId ||
+    !/^[A-Za-z0-9_-]+$/.test(normalizedSpreadsheetId)
+  ) {
+    throw new Error("spreadsheetId không hợp lệ.");
+  }
+
+  return `https://docs.google.com/spreadsheets/d/${normalizedSpreadsheetId}/edit`;
 }
 
 function quoteDriveQueryValue(value) {
@@ -125,6 +134,33 @@ function getSheetsClient(auth, sheets) {
 
 function getDriveClient(auth, drive) {
   return drive || google.drive({ version: "v3", auth });
+}
+
+async function resolveExistingMeetingSpreadsheetUrl(options = {}) {
+  const configuredSpreadsheetId = options.spreadsheetId?.trim();
+
+  if (configuredSpreadsheetId) {
+    return spreadsheetUrl(configuredSpreadsheetId);
+  }
+
+  const drive = getDriveClient(options.auth, options.drive);
+  const propertyKey = quoteDriveQueryValue(APP_SPREADSHEET_PROPERTY_KEY);
+  const propertyValue = quoteDriveQueryValue(APP_SPREADSHEET_PROPERTY_VALUE);
+  const mimeType = quoteDriveQueryValue(GOOGLE_SPREADSHEET_MIME_TYPE);
+  const response = await drive.files.list({
+    spaces: "drive",
+    pageSize: 1,
+    orderBy: "createdTime",
+    fields: "files(id)",
+    q: [
+      `mimeType = '${mimeType}'`,
+      "trashed = false",
+      `appProperties has { key='${propertyKey}' and value='${propertyValue}' }`,
+    ].join(" and "),
+  });
+  const existingFile = response.data.files?.find((file) => file.id);
+
+  return existingFile ? spreadsheetUrl(existingFile.id) : null;
 }
 
 async function resolveMeetingSpreadsheet(options) {
@@ -718,6 +754,7 @@ module.exports = {
   formatVietnamTime,
   getNextMeetingNumber,
   ensureMeetingSheet,
+  resolveExistingMeetingSpreadsheetUrl,
   resolveMeetingSpreadsheet,
   upsertMeetingRow,
 };

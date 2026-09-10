@@ -1,6 +1,9 @@
 const { resolveMeetingTitle } = require("./meetingTitle");
 
 const SOURCE_LABELS = Object.freeze({
+  system: "Âm thanh hệ thống",
+  microphone: "Microphone",
+  both: "Âm thanh hệ thống và microphone",
   room: "Phòng họp",
   meet: "Google Meet",
   teams: "Microsoft Teams",

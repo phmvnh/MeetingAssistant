@@ -48,4 +48,7 @@ test("saveMeetingLocally keeps meetings with the same title in separate files", 
   assert.doesNotMatch(path.basename(first.markdownPath), /Tiêu đề dài/);
   assert.match(path.basename(first.markdownPath), /11111111\.md$/);
   assert.match(path.basename(second.markdownPath), /22222222\.md$/);
+  const storedRecord = JSON.parse(await fs.readFile(first.jsonPath, "utf8"));
+  assert.equal(storedRecord.recordType, "meeting-assistant-local-record");
+  assert.equal(storedRecord.schemaVersion, 1);
 });

@@ -59,6 +59,16 @@ class TranscriptAssembler {
     return { ...item };
   }
 
+  setPartial(itemId, partial) {
+    const item = this.ensureItem(itemId);
+
+    if (!item.completed && typeof partial === "string") {
+      item.partial = partial.trim();
+    }
+
+    return { ...item };
+  }
+
   complete(itemId, transcript) {
     const item = this.ensureItem(itemId);
     item.transcript = typeof transcript === "string" ? transcript.trim() : "";

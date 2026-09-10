@@ -4,6 +4,9 @@ const path = require("node:path");
 const { renderMeetingMarkdown, sanitizeFileName } = require("./formatDocument");
 const { resolveMeetingTitle } = require("./meetingTitle");
 
+const LOCAL_RECORD_TYPE = "meeting-assistant-local-record";
+const LOCAL_RECORD_VERSION = 1;
+
 async function saveMeetingLocally(options) {
   const { outputDirectory, meeting, notes, transcript } = options;
 
@@ -25,6 +28,8 @@ async function saveMeetingLocally(options) {
   const jsonPath = path.join(outputDirectory, `${baseName}.json`);
   const markdown = renderMeetingMarkdown({ meeting, notes, transcript });
   const record = {
+    recordType: LOCAL_RECORD_TYPE,
+    schemaVersion: LOCAL_RECORD_VERSION,
     meeting,
     notes,
     transcript,
@@ -41,5 +46,7 @@ async function saveMeetingLocally(options) {
 }
 
 module.exports = {
+  LOCAL_RECORD_TYPE,
+  LOCAL_RECORD_VERSION,
   saveMeetingLocally,
 };

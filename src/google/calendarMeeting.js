@@ -53,11 +53,13 @@ function scoreCalendarEvent(event, meeting, expectedTitle) {
 function buildAssistantDescription({ existingDescription, meeting, notes, documentUrl }) {
   const startMarker = "----- Startmarker -----";
   const endMarker = "----- Endmarker -----";
+  const title = resolveMeetingTitle(meeting, notes);
   const actionItems = (notes.actionItems || [])
     .map((item) => `- ${item.task}${item.owner ? ` — ${item.owner}` : ""}`)
     .join("\n");
   const block = [
     startMarker,
+    `Tiêu đề: ${title}`,
     documentUrl ? `Biên bản: ${documentUrl}` : "Biên bản đã được lưu cục bộ.",
     "",
     "Tóm tắt:",
@@ -107,27 +109,88 @@ async function findMatchingEvent({ calendar, calendarId, meeting, title }) {
   return ranked[0]?.score >= 40 ? ranked[0].event : null;
 }
 
+async function resolveMeetingCalendar({
+  calendar,
+  calendarId,
+  calendarName,
+  createIfMissing = true,
+}) {
+  const configuredCalendarId = String(calendarId || "").trim();
+
+  if (configuredCalendarId) {
+    if (configuredCalendarId.toLowerCase() === "primary") {
+      throw new Error(
+        "MEETING_CALENDAR_ID không được là primary. Event chỉ được lưu trong lịch Meeting Assistant riêng.",
+      );
+    }
+
+    return configuredCalendarId;
+  }
+
+  const response = await calendar.calendarList.list({
+    minAccessRole: "writer",
+    showHidden: false,
+    maxResults: 250,
+  });
+  const existing = (response.data.items || []).find(
+    (item) => item.summary === calendarName,
+  );
+
+  if (existing?.id) {
+    return existing.id;
+  }
+
+  if (!createIfMissing) {
+    return null;
+  }
+
+  const created = await calendar.calendars.insert({
+    requestBody: {
+      summary: calendarName,
+      description: "Các cuộc họp được tạo bởi Meeting Assistant.",
+    },
+  });
+
+  if (!created.data.id) {
+    throw new Error(`Google không trả về ID cho lịch ${calendarName}.`);
+  }
+
+  return created.data.id;
+}
+
 async function syncMeetingCalendar(options) {
   const { google } = require("googleapis");
   const {
     auth,
     calendarId,
+    calendarName = "Meeting Assistant",
     timeZone,
     meeting,
     notes,
     documentUrl,
     createIfMissing,
+    googleApi = google,
   } = options;
 
-  if (!calendarId) {
-    throw new Error("Thiếu CALENDAR_ID.");
+  const calendar = googleApi.calendar({ version: "v3", auth });
+  const meetingCalendarId = await resolveMeetingCalendar({
+    calendar,
+    calendarId,
+    calendarName,
+    createIfMissing,
+  });
+  if (!meetingCalendarId) {
+    return {
+      action: "skipped",
+      calendarId: "",
+      eventId: "",
+      htmlLink: "",
+    };
   }
-
-  const calendar = google.calendar({ version: "v3", auth });
   const title = resolveMeetingTitle(meeting, notes);
   const existingEvent = await findMatchingEvent({
     calendar,
-    calendarId,
+    calendarId: meetingCalendarId,
     meeting,
     title,
   });
@@ -140,7 +203,7 @@ async function syncMeetingCalendar(options) {
       documentUrl,
     });
     const response = await calendar.events.patch({
-      calendarId,
+      calendarId: meetingCalendarId,
       eventId: existingEvent.id,
       requestBody: {
         description,
@@ -155,6 +218,7 @@ async function syncMeetingCalendar(options) {
 
     return {
       action: "updated",
+      calendarId: meetingCalendarId,
       eventId: response.data.id,
       htmlLink: response.data.htmlLink,
     };
@@ -175,7 +239,7 @@ async function syncMeetingCalendar(options) {
     documentUrl,
   });
   const response = await calendar.events.insert({
-    calendarId,
+    calendarId: meetingCalendarId,
     requestBody: {
       summary: title,
       description,
@@ -198,6 +262,7 @@ async function syncMeetingCalendar(options) {
 
   return {
     action: "created",
+    calendarId: meetingCalendarId,
     eventId: response.data.id,
     htmlLink: response.data.htmlLink,
   };
@@ -207,5 +272,6 @@ module.exports = {
   normalizeTitle,
   scoreCalendarEvent,
   buildAssistantDescription,
+  resolveMeetingCalendar,
   syncMeetingCalendar,
 };

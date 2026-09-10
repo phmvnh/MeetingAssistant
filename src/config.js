@@ -68,15 +68,7 @@ function getCsvEnv(name, fallback = []) {
 
 function getGeminiConfig() {
   return {
-    apiKey: getRequiredEnv("GEMINI_API_KEY"),
-    liveModel: getOptionalEnv(
-      "GEMINI_LIVE_MODEL",
-      "gemini-3.1-flash-live-preview",
-    ),
-    summaryModel: getOptionalEnv(
-      "GEMINI_SUMMARY_MODEL",
-      "gemini-3.5-flash",
-    ),
+    apiKey: getOptionalEnv("GEMINI_API_KEY"),
     languages: getCsvEnv("TRANSCRIPTION_LANGUAGES", ["vi", "en"]),
     prompt: getOptionalEnv(
       "TRANSCRIPTION_PROMPT",
@@ -94,7 +86,7 @@ function getGoogleWorkspaceConfig() {
     );
   }
 
-  const configuredCalendarId = getOptionalEnv("CALENDAR_ID");
+  const meetingCalendarId = getOptionalEnv("MEETING_CALENDAR_ID");
 
   return {
     authMode,
@@ -118,10 +110,20 @@ function getGoogleWorkspaceConfig() {
       "Meeting Log",
     ),
     sheetName: getOptionalEnv("SHEET_NAME", "meeting_assistant"),
-    // OAuth always follows the account selected in the browser. Service-account
-    // mode still needs an explicitly shared calendar ID.
-    calendarId: authMode === "oauth" ? "primary" : configuredCalendarId,
+    calendarId: meetingCalendarId,
+    calendarName: getOptionalEnv("MEETING_CALENDAR_NAME", "Meeting Assistant"),
     timeZone: getOptionalEnv("CALENDAR_TIME_ZONE", "Asia/Ho_Chi_Minh"),
+  };
+}
+
+function getTranscriptionConfig() {
+  return {
+    engine: getOptionalEnv("TRANSCRIPTION_ENGINE", "whisper"),
+    languages: getCsvEnv("TRANSCRIPTION_LANGUAGES", ["vi", "en"]),
+    prompt: getOptionalEnv(
+      "TRANSCRIPTION_PROMPT",
+      "Cuộc họp công việc bằng tiếng Việt, có thể xen thuật ngữ tiếng Anh.",
+    ),
   };
 }
 
@@ -133,5 +135,6 @@ module.exports = {
   getSheetConfig,
   getCalendarConfig,
   getGeminiConfig,
+  getTranscriptionConfig,
   getGoogleWorkspaceConfig,
 };

@@ -4,6 +4,7 @@
 session/
 cookies.json
 node_modules/
+native/whisper-sidecar/build/
 credentials.json
 credentials.json.json
 oauth_credentials.json

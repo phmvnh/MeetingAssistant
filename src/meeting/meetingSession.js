@@ -22,15 +22,28 @@ const TRANSITIONS = Object.freeze({
   [STATES.CANCELLED]: [],
 });
 
+function normalizeMeetingId(value) {
+  if (value === undefined || value === null || value === "") {
+    return randomUUID();
+  }
+
+  const meetingId = String(value);
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(meetingId)) {
+    throw new Error("Meeting ID không hợp lệ.");
+  }
+
+  return meetingId;
+}
+
 class MeetingSession {
   constructor(metadata = {}) {
     if (!metadata.consentConfirmed) {
       throw new Error("Cần xác nhận người tham dự đã được thông báo về việc ghi âm.");
     }
 
-    this.meetingId = metadata.meetingId || randomUUID();
+    this.meetingId = normalizeMeetingId(metadata.meetingId);
     this.metadata = {
-      title: metadata.title?.trim() || "Cuộc họp chưa đặt tên",
+      title: metadata.title?.trim() || "",
       source: metadata.source || "room",
       createCalendarIfMissing: metadata.createCalendarIfMissing !== false,
       consentConfirmed: true,
@@ -78,4 +91,5 @@ class MeetingSession {
 module.exports = {
   STATES,
   MeetingSession,
+  normalizeMeetingId,
 };

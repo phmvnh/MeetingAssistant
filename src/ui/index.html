@@ -18,26 +18,97 @@
           <h1>AI Meeting Assistant</h1>
         </div>
         <div class="service-status" aria-label="Trạng thái cấu hình">
-          <span id="gemini-status" class="status-chip status-pending">Gemini</span>
-          <span id="google-status" class="status-chip status-pending">Google</span>
-          <div id="google-account" class="google-account hidden" aria-live="polite">
-            <strong id="google-account-email" class="google-account-email"></strong>
-            <span id="google-account-detail" class="google-account-detail"></span>
-          </div>
-          <div class="google-account-actions">
-            <button id="google-auth-button" class="text-button hidden" type="button">
-              Đăng nhập Google
-            </button>
-            <button id="google-switch-button" class="text-button hidden" type="button">
-              Đổi tài khoản
-            </button>
+          <button
+            id="whisper-models-open-button"
+            class="status-chip status-button status-ready"
+            type="button"
+            title="Quản lý Model Whisper Local"
+          >
+            Whisper STT
+          </button>
+          <button
+            id="storage-open-button"
+            class="status-chip status-button status-pending"
+            type="button"
+            title="Xem và quản lý dung lượng lưu trữ"
+          >
+            Lưu trữ
+          </button>
+          <button
+            id="summary-ai-open-button"
+            class="status-chip status-button status-pending"
+            type="button"
+            title="Mở cấu hình AI tóm tắt"
+          >
+            Cấu hình AI
+          </button>
+          <div id="google-account" class="google-account hidden">
             <button
-              id="google-disconnect-button"
-              class="text-button danger hidden"
+              id="google-account-trigger"
+              class="google-account-trigger"
               type="button"
+              aria-haspopup="menu"
+              aria-controls="google-account-dropdown"
+              aria-expanded="false"
+              aria-label="Mở menu tài khoản Google"
+              title="Tài khoản Google"
             >
-              Ngắt kết nối
+              <span id="google-account-avatar" class="google-account-avatar" aria-hidden="true">G</span>
+              <svg class="google-account-chevron" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="m4 6 4 4 4-4" />
+              </svg>
             </button>
+
+            <div
+              id="google-account-dropdown"
+              class="google-account-dropdown hidden"
+              role="menu"
+              aria-label="Tài khoản và Google Workspace"
+            >
+              <div class="google-account-profile">
+                <strong id="google-account-email" class="google-account-email"></strong>
+                <span id="google-account-detail" class="google-account-detail"></span>
+              </div>
+
+              <div class="google-account-divider"></div>
+
+              <button id="google-open-sheet-button" class="google-menu-item" type="button" role="menuitem">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 3h9l3 3v15H6z" />
+                  <path d="M9 10h6M9 14h6M12 10v8" />
+                </svg>
+                <span>Mở Google Sheet</span>
+              </button>
+              <button id="google-open-calendar-button" class="google-menu-item" type="button" role="menuitem">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <rect x="4" y="5" width="16" height="15" rx="2" />
+                  <path d="M8 3v4M16 3v4M4 10h16" />
+                </svg>
+                <span>Mở Google Calendar</span>
+              </button>
+
+              <div class="google-account-divider"></div>
+
+              <button id="google-auth-button" class="google-menu-item hidden" type="button" role="menuitem">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M14 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h7a2 2 0 0 0 2-2v-3" />
+                  <path d="M10 12h10M16 8l4 4-4 4" />
+                </svg>
+                <span id="google-auth-label">Đăng nhập Google</span>
+              </button>
+              <button
+                id="google-disconnect-button"
+                class="google-menu-item danger hidden"
+                type="button"
+                role="menuitem"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M10 8V5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-3" />
+                  <path d="m14 12-9 0M8 8l-4 4 4 4" />
+                </svg>
+                <span id="google-disconnect-label">Đăng xuất</span>
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -53,29 +124,16 @@
           </div>
 
           <form id="meeting-form">
-            <label class="field-label" for="meeting-title">Tên cuộc họp</label>
-            <input
-              id="meeting-title"
-              name="title"
-              type="text"
-              maxlength="160"
-              autocomplete="off"
-            />
-
             <label class="field-label" for="meeting-source">Nguồn cuộc họp</label>
             <select id="meeting-source" name="source">
-              <option value="room">Phòng họp trực tiếp</option>
-              <option value="meet">Google Meet</option>
-              <option value="teams">Microsoft Teams</option>
-              <option value="other">Nguồn khác</option>
+              <option value="system">Âm thanh hệ thống</option>
+              <option value="microphone">Microphone</option>
+              <option value="both" selected>Cả hai</option>
             </select>
 
             <label class="field-label" for="microphone">Microphone</label>
             <div class="inline-field">
               <select id="microphone" name="microphone"></select>
-              <button id="refresh-devices" class="icon-button" type="button" title="Làm mới">
-                ↻
-              </button>
             </div>
 
             <label class="field-label" for="keywords">Từ khóa chuyên ngành</label>
@@ -88,10 +146,10 @@
             />
 
             <label class="check-row">
-              <input id="system-audio" type="checkbox" />
+              <input id="save-audio" type="checkbox" disabled />
               <span>
-                <strong>Nghe cả âm thanh máy tính</strong>
-                <small>Dùng cho Meet/Teams trên Windows.</small>
+                <strong>Lưu âm thanh cuộc họp</strong>
+                <small>Mặc định tắt. Âm thanh thô chỉ được lưu khi bạn bật tùy chọn này.</small>
               </span>
             </label>
 
@@ -99,15 +157,213 @@
               <input id="create-calendar" type="checkbox" checked />
               <span>
                 <strong>Tạo event nếu chưa có</strong>
-                <small>Nếu tìm thấy event gần thời gian này, ứng dụng sẽ cập nhật event đó.</small>
+                <small>Event chỉ được tìm và lưu trong lịch riêng “Meeting Assistant”.</small>
               </span>
             </label>
 
-            <button id="start-button" class="primary-button" type="submit">
+            <button id="start-button" class="primary-button" type="submit" disabled>
               <span class="record-dot"></span>
               Bắt đầu lắng nghe
             </button>
           </form>
+
+          <dialog id="summary-ai-settings" class="summary-ai-settings">
+            <div class="summary-ai-dialog-header">
+              <span>
+                <strong>Cấu hình AI Summary</strong>
+                <small>Tự động tạo biên bản và tóm tắt cuộc họp sau khi bấm "Done".</small>
+              </span>
+              <div class="summary-ai-dialog-heading-actions">
+                <span id="summary-ai-status" class="settings-status">
+                  Đang tải…
+                </span>
+                <button
+                  id="summary-ai-close"
+                  class="icon-button"
+                  type="button"
+                  title="Đóng cấu hình AI Summary"
+                  aria-label="Đóng cấu hình AI Summary"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div class="summary-ai-settings-body">
+              <label class="field-label" for="summary-ai-provider">
+                Nhà cung cấp AI
+              </label>
+              <select id="summary-ai-provider">
+                <option value="gemini">Google Gemini</option>
+                <option value="openai">OpenAI (ChatGPT)</option>
+                <option value="anthropic">Anthropic Claude</option>
+                <option value="xai">xAI Grok</option>
+              </select>
+
+              <label class="field-label" for="summary-ai-model">Chọn model AI</label>
+              <select id="summary-ai-model"></select>
+
+              <label class="field-label" for="summary-ai-key">Khóa API (API Key)</label>
+              <input
+                id="summary-ai-key"
+                type="password"
+                maxlength="4096"
+                autocomplete="new-password"
+                spellcheck="false"
+                placeholder="Nhập API key"
+              />
+              <small id="summary-ai-key-help" class="settings-help">
+                Khóa API được mã hóa an toàn trên máy tính của bạn.
+              </small>
+
+              <div class="summary-ai-actions">
+                <button
+                  id="summary-ai-save"
+                  class="primary-button compact"
+                  type="button"
+                >
+                  Lưu cấu hình
+                </button>
+                <button
+                  id="summary-ai-test"
+                  class="secondary-button"
+                  type="button"
+                  title="Kiểm tra kết nối với dịch vụ AI"
+                >
+                  Kiểm tra kết nối
+                </button>
+                <button
+                  id="summary-ai-remove"
+                  class="text-button danger"
+                  type="button"
+                >
+                  Xóa
+                </button>
+              </div>
+
+              <div
+                id="summary-ai-message"
+                class="notice hidden"
+                aria-live="polite"
+              ></div>
+            </div>
+          </dialog>
+
+          <dialog id="whisper-models-dialog" class="summary-ai-settings whisper-models-dialog">
+            <div class="summary-ai-dialog-header">
+              <span>
+                <strong>Transcript model</strong>
+                <small>Nhận diện giọng nói trực tiếp trên máy tính (chạy offline, bảo mật).</small>
+              </span>
+              <div class="summary-ai-dialog-heading-actions">
+                <button
+                  id="whisper-models-close"
+                  class="icon-button"
+                  type="button"
+                  title="Đóng"
+                  aria-label="Đóng"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div class="whisper-models-body">
+              <div id="whisper-models-list" class="whisper-models-list">
+                <!-- Danh sách model do renderer.js cập nhật -->
+              </div>
+            </div>
+          </dialog>
+
+          <dialog
+            id="storage-dialog"
+            class="summary-ai-settings storage-dialog"
+            aria-labelledby="storage-dialog-title"
+          >
+            <div class="summary-ai-dialog-header">
+              <span>
+                <strong id="storage-dialog-title">Quản lý dung lượng</strong>
+                <small>Kiểm soát dữ liệu được lưu trên máy tính này.</small>
+              </span>
+              <div class="summary-ai-dialog-heading-actions">
+                <button
+                  id="storage-close"
+                  class="icon-button"
+                  type="button"
+                  title="Đóng"
+                  aria-label="Đóng quản lý dung lượng"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div class="storage-body">
+              <section class="storage-card" aria-labelledby="storage-audio-title">
+                <div class="storage-card-header">
+                  <span>
+                    <strong id="storage-audio-title">Cache âm thanh</strong>
+                    <small id="storage-audio-count">0 tệp</small>
+                  </span>
+                  <strong id="storage-audio-size" class="storage-size">0 B</strong>
+                </div>
+                <p id="storage-audio-path" class="storage-path"></p>
+                <div class="storage-actions">
+                  <button id="storage-open-audio-folder" class="secondary-button" type="button">
+                    Mở thư mục lưu trữ
+                  </button>
+                  <button id="storage-clear-audio" class="secondary-button danger" type="button">
+                    Xóa cache âm thanh
+                  </button>
+                </div>
+              </section>
+
+              <section class="storage-card" aria-labelledby="storage-documents-title">
+                <div class="storage-card-header">
+                  <span>
+                    <strong id="storage-documents-title">Biên bản cục bộ</strong>
+                    <small id="storage-documents-count">0 tệp</small>
+                  </span>
+                  <strong id="storage-documents-size" class="storage-size">0 B</strong>
+                </div>
+                <p id="storage-documents-path" class="storage-path"></p>
+                <div class="storage-actions">
+                  <button id="storage-open-documents-folder" class="secondary-button" type="button">
+                    Mở thư mục lưu trữ
+                  </button>
+                  <button id="storage-clear-documents" class="secondary-button danger" type="button">
+                    Xóa biên bản cục bộ
+                  </button>
+                </div>
+              </section>
+
+              <div class="storage-retention">
+                <label class="field-label" for="storage-retention">
+                  Tự động dọn cache âm thanh
+                </label>
+                <select id="storage-retention">
+                  <option value="after_meeting">Sau khi kết thúc cuộc họp</option>
+                  <option value="1_day">Sau 1 ngày</option>
+                  <option value="7_days">Sau 7 ngày</option>
+                  <option value="30_days">Sau 30 ngày</option>
+                </select>
+                <small id="storage-retention-help" class="settings-help">
+                  Chính sách này chỉ áp dụng cho cache âm thanh, không xóa model Whisper.
+                </small>
+              </div>
+
+              <div class="storage-footer">
+                <button id="storage-save-settings" class="primary-button compact" type="button">
+                  Lưu thiết lập
+                </button>
+                <p class="storage-model-note">
+                  Model Whisper chỉ được xóa thủ công trong cửa sổ Transcript model.
+                </p>
+              </div>
+
+              <div id="storage-message" class="notice hidden" aria-live="polite"></div>
+            </div>
+          </dialog>
 
           <div id="config-warning" class="notice warning hidden"></div>
         </aside>
@@ -167,16 +423,16 @@
             <h2 id="result-title">Cuộc họp chưa đặt tên</h2>
           </div>
           <div class="result-actions">
-            <button id="open-local-button" class="secondary-button" type="button">
+            <button id="open-local-button" class="result-action-button" type="button">
               Mở bản cục bộ
             </button>
-            <button id="open-doc-button" class="primary-button compact hidden" type="button">
+            <button id="open-doc-button" class="result-action-button hidden" type="button">
               Mở Google Docs
             </button>
-            <button id="open-sheet-button" class="text-button hidden" type="button">
+            <button id="open-sheet-button" class="result-action-button hidden" type="button">
               Mở Google Sheet
             </button>
-            <button id="open-calendar-button" class="text-button hidden" type="button">
+            <button id="open-calendar-button" class="result-action-button hidden" type="button">
               Mở Calendar
             </button>
           </div>

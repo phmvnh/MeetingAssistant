@@ -29,7 +29,24 @@ test("MeetingSession follows the happy-path state machine", () => {
   assert.equal(session.metadata.title, "Sprint planning");
 });
 
+test("MeetingSession keeps an empty title for AI generation", () => {
+  const session = new MeetingSession({ consentConfirmed: true });
+
+  assert.equal(session.metadata.title, "");
+});
+
 test("MeetingSession rejects invalid transitions", () => {
   const session = new MeetingSession({ consentConfirmed: true });
   assert.throws(() => session.transition(STATES.COMPLETED), /Không thể chuyển/);
+});
+
+test("MeetingSession rejects a meeting ID containing a path", () => {
+  assert.throws(
+    () =>
+      new MeetingSession({
+        consentConfirmed: true,
+        meetingId: "..\\outside",
+      }),
+    /Meeting ID không hợp lệ/i,
+  );
 });

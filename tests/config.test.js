@@ -5,7 +5,8 @@ const { getGoogleWorkspaceConfig } = require("../src/config");
 
 const ENV_NAMES = [
   "GOOGLE_AUTH_MODE",
-  "CALENDAR_ID",
+  "MEETING_CALENDAR_ID",
+  "MEETING_CALENDAR_NAME",
   "GOOGLE_SPREADSHEET_TITLE",
   "SHEET_NAME",
 ];
@@ -36,27 +37,45 @@ function withEnvironment(values, callback) {
   }
 }
 
-test("OAuth follows the signed-in account's primary Calendar", () => {
+test("Calendar configuration targets the dedicated Meeting Assistant calendar", () => {
   withEnvironment(
     {
       GOOGLE_AUTH_MODE: "oauth",
-      CALENDAR_ID: "a-fixed-calendar@example.com",
+      MEETING_CALENDAR_ID: "a-fixed-calendar@example.com",
+      MEETING_CALENDAR_NAME: "Meeting Assistant",
     },
     () => {
       const config = getGoogleWorkspaceConfig();
 
-      assert.equal(config.calendarId, "primary");
+      assert.equal(config.calendarId, "a-fixed-calendar@example.com");
+      assert.equal(config.calendarName, "Meeting Assistant");
       assert.equal(config.sheetName, "meeting_assistant");
       assert.equal(config.spreadsheetTitle, "Meeting Log");
     },
   );
 });
 
-test("service account keeps the explicitly shared Calendar ID", () => {
+test("Dedicated calendar ID is optional so the app can find or create it", () => {
+  withEnvironment(
+    {
+      GOOGLE_AUTH_MODE: "oauth",
+      MEETING_CALENDAR_ID: "",
+    },
+    () => {
+      assert.equal(getGoogleWorkspaceConfig().calendarId, "");
+      assert.equal(
+        getGoogleWorkspaceConfig().calendarName,
+        "Meeting Assistant",
+      );
+    },
+  );
+});
+
+test("service account can use a pre-created dedicated Calendar ID", () => {
   withEnvironment(
     {
       GOOGLE_AUTH_MODE: "service_account",
-      CALENDAR_ID: "shared-calendar@example.com",
+      MEETING_CALENDAR_ID: "shared-calendar@example.com",
     },
     () => {
       assert.equal(

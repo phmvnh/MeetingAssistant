@@ -133,9 +133,11 @@ người dùng không yêu cầu.
   `src/config.js`, trừ khi task yêu cầu thay đổi rõ ràng.
 - OAuth sử dụng quyền identity cùng Drive, Docs, Sheets và Calendar; không mở
   rộng scope nếu chưa có lý do và chưa thông báo cho người dùng.
-- Trong OAuth mode, Calendar dùng `primary`; Sheets có thể tìm hoặc tạo
-  spreadsheet theo cấu hình hiện tại. Service account cần ID/quyền chia sẻ phù
-  hợp.
+- Calendar meeting dùng một calendar riêng tên `Meeting Assistant`; ứng dụng
+  sẽ tìm hoặc tạo calendar này và không ghi event vào lịch cá nhân. Có thể đặt
+  `MEETING_CALENDAR_ID` để dùng đúng calendar riêng đã tạo sẵn. Sheets có thể
+  tìm hoặc tạo spreadsheet theo cấu hình hiện tại. Service account cần
+  quyền tạo/truy cập calendar phù hợp.
 - Các thao tác Google có thể tạo hoặc sửa dữ liệu thật. Unit test phải mock API;
   không chạy script integration/manual hoặc ghi dữ liệu thật khi chưa được người
   dùng cho phép.

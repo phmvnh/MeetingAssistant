@@ -16,6 +16,7 @@ const {
   formatVietnamDate,
   formatVietnamTime,
   getNextMeetingNumber,
+  resolveExistingMeetingSpreadsheetUrl,
   upsertMeetingRow,
 } = require("../src/google/sheetsMeeting");
 
@@ -55,6 +56,111 @@ function createSheetProperties() {
     },
   };
 }
+
+test("resolves a configured spreadsheet URL without calling Google APIs", async () => {
+  const rejectApiCall = async () => {
+    throw new Error("must not call a Google API");
+  };
+  const drive = {
+    files: {
+      list: rejectApiCall,
+      create: rejectApiCall,
+      update: rejectApiCall,
+    },
+  };
+  const sheets = {
+    spreadsheets: {
+      create: rejectApiCall,
+      update: rejectApiCall,
+    },
+  };
+
+  const url = await resolveExistingMeetingSpreadsheetUrl({
+    auth: {},
+    spreadsheetId: " configured-sheet-id ",
+    drive,
+    sheets,
+  });
+
+  assert.equal(
+    url,
+    "https://docs.google.com/spreadsheets/d/configured-sheet-id/edit",
+  );
+});
+
+test("finds only the existing app-tagged spreadsheet without mutating it", async () => {
+  let listRequest;
+  const rejectWrite = async () => {
+    throw new Error("must not mutate Google Drive or Sheets");
+  };
+  const drive = {
+    files: {
+      list: async (request) => {
+        listRequest = request;
+        return { data: { files: [{ id: "tagged-sheet-id" }] } };
+      },
+      create: rejectWrite,
+      update: rejectWrite,
+    },
+  };
+  const sheets = {
+    spreadsheets: {
+      create: rejectWrite,
+      update: rejectWrite,
+    },
+  };
+
+  const url = await resolveExistingMeetingSpreadsheetUrl({
+    auth: {},
+    drive,
+    sheets,
+  });
+
+  assert.equal(
+    url,
+    "https://docs.google.com/spreadsheets/d/tagged-sheet-id/edit",
+  );
+  assert.equal(listRequest.spaces, "drive");
+  assert.equal(listRequest.pageSize, 1);
+  assert.equal(listRequest.fields, "files(id)");
+  assert.match(listRequest.q, /mimeType = 'application\/vnd\.google-apps\.spreadsheet'/);
+  assert.match(listRequest.q, /trashed = false/);
+  assert.match(listRequest.q, /appProperties has/);
+  assert.match(listRequest.q, new RegExp(APP_SPREADSHEET_PROPERTY_KEY));
+  assert.match(listRequest.q, new RegExp(APP_SPREADSHEET_PROPERTY_VALUE));
+});
+
+test("returns null when no tagged spreadsheet exists and performs no writes", async () => {
+  let listCount = 0;
+  const rejectWrite = async () => {
+    throw new Error("must not create or update a spreadsheet");
+  };
+  const drive = {
+    files: {
+      list: async () => {
+        listCount += 1;
+        return { data: { files: [] } };
+      },
+      create: rejectWrite,
+      update: rejectWrite,
+    },
+  };
+  const sheets = {
+    spreadsheets: {
+      create: rejectWrite,
+      update: rejectWrite,
+    },
+  };
+
+  const url = await resolveExistingMeetingSpreadsheetUrl({
+    auth: {},
+    drive,
+    sheets,
+  });
+
+  assert.equal(url, null);
+  assert.equal(listCount, 1);
+});
 
 test("migrates the legacy Action Items header to Vietnamese", async () => {
   const legacyHeaders = [...LEGACY_MEETING_HEADERS];

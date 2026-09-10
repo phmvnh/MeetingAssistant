@@ -1,4 +1,9 @@
 const { resolveMeetingTitle } = require("./meetingTitle");
+const {
+  extractGeminiText,
+  getSummaryProvider,
+  requestSummaryText,
+} = require("./summaryProviders");
 
 const MEETING_NOTES_SCHEMA = {
   type: "object",
@@ -44,20 +49,93 @@ const MEETING_NOTES_SCHEMA = {
 
 const SYSTEM_PROMPT = [
   "Bạn là thư ký cuộc họp chuyên nghiệp.",
-  "Hãy tạo biên bản bằng tiếng Việt từ transcript được cung cấp.",
+  "Hãy tạo biên bản hoàn toàn bằng tiếng Việt từ transcript được cung cấp.",
+  "Giữ nguyên thuật ngữ kỹ thuật, từ viết tắt, tên sản phẩm và tên riêng bằng tiếng Anh (hoặc kèm thuật ngữ tiếng Anh nếu cần thiết).",
+  "Tuyệt đối không dùng tiếng Nhật, tiếng Trung hay bất kỳ ngôn ngữ nào khác ngoài tiếng Việt và tiếng Anh.",
+  "Tự động loại bỏ các đoạn ký tự lạ, lỗi nhận diện hoặc từ ngữ rác do ảo giác âm thanh nếu có trong transcript.",
   "Không bịa dữ kiện, tên người, quyết định hoặc thời hạn.",
-  "Trường title phải giữ nguyên chính xác tiêu đề người dùng nhập, không viết lại hoặc thêm mô tả.",
+  "Nếu người dùng đã nhập tiêu đề, giữ nguyên chính xác tiêu đề đó, không viết lại hoặc thêm mô tả.",
+  "Nếu tiêu đề người dùng nhập là rỗng hoặc không có, hãy tự đặt một tiêu đề ngắn gọn từ 5 đến 12 từ, phản ánh đúng chủ đề chính của cuộc họp.",
   "Nếu không xác định được người phụ trách hoặc hạn hoàn thành, trả chuỗi rỗng.",
-  "Giữ nguyên thuật ngữ kỹ thuật, tên sản phẩm và tên riêng khi có thể.",
-  "Loại bỏ câu lặp, từ đệm và lỗi nhận dạng rõ ràng nhưng không thay đổi ý nghĩa.",
+  "Loại bỏ câu lặp, từ đệm nhưng không làm thay đổi ý nghĩa cuộc họp.",
 ].join(" ");
 
-function extractGeminiText(response) {
-  return (response.candidates || [])
-    .flatMap((candidate) => candidate.content?.parts || [])
-    .map((part) => (typeof part.text === "string" ? part.text : ""))
-    .join("")
-    .trim();
+function buildUserContent(metadata, transcript) {
+  return [
+    `Tiêu đề người dùng nhập: ${metadata.title || "Không có"}`,
+    `Nguồn cuộc họp: ${metadata.source || "Không rõ"}`,
+    `Bắt đầu: ${metadata.startedAt || "Không rõ"}`,
+    `Kết thúc: ${metadata.endedAt || "Không rõ"}`,
+    "",
+    "TRANSCRIPT:",
+    transcript,
+  ].join("\n");
+}
+
+function assertStringArray(value, fieldName) {
+  if (
+    !Array.isArray(value) ||
+    value.some((item) => typeof item !== "string")
+  ) {
+    throw new Error(`Trường ${fieldName} không đúng định dạng.`);
+  }
+}
+
+function validateMeetingNotes(notes) {
+  if (!notes || typeof notes !== "object" || Array.isArray(notes)) {
+    throw new Error("Biên bản phải là một JSON object.");
+  }
+
+  if (typeof notes.title !== "string" || typeof notes.summary !== "string") {
+    throw new Error("Biên bản thiếu title hoặc summary hợp lệ.");
+  }
+
+  assertStringArray(notes.keyPoints, "keyPoints");
+  assertStringArray(notes.decisions, "decisions");
+  assertStringArray(notes.openQuestions, "openQuestions");
+
+  if (!Array.isArray(notes.actionItems)) {
+    throw new Error("Trường actionItems không đúng định dạng.");
+  }
+
+  for (const action of notes.actionItems) {
+    if (
+      !action ||
+      typeof action !== "object" ||
+      Array.isArray(action) ||
+      typeof action.task !== "string" ||
+      typeof action.owner !== "string" ||
+      typeof action.dueDate !== "string"
+    ) {
+      throw new Error("Một mục actionItems không đúng định dạng.");
+    }
+  }
+
+  return notes;
+}
+
+function parseMeetingNotes(outputText, providerLabel) {
+  const normalized = outputText
+    .trim()
+    .replace(/^\`\`\`(?:json)?\s*/i, "")
+    .replace(/\s*\`\`\`$/, "");
+  let notes;
+
+  try {
+    notes = JSON.parse(normalized);
+  } catch {
+    throw new Error(
+      `Nội dung biên bản từ ${providerLabel} không phải JSON hợp lệ.`,
+    );
+  }
+
+  try {
+    return validateMeetingNotes(notes);
+  } catch (error) {
+    throw new Error(
+      `Nội dung biên bản từ ${providerLabel} không hợp lệ: ${error.message}`,
+    );
+  }
 }
 
 async function summarizeMeeting(options = {}) {
@@ -67,80 +145,22 @@ async function summarizeMeeting(options = {}) {
     throw new Error("Không có transcript để tạo biên bản.");
   }
 
-  if (!options.apiKey?.trim()) {
-    throw new Error("Thiếu GEMINI_API_KEY để tạo biên bản.");
+  if (options.configurationError) {
+    throw new Error(options.configurationError);
   }
 
-  const fetchImpl = options.fetchImpl || globalThis.fetch;
-
-  if (typeof fetchImpl !== "function") {
-    throw new Error("Môi trường hiện tại không hỗ trợ fetch.");
-  }
-
+  const provider = getSummaryProvider(options.provider || "gemini");
   const metadata = options.metadata || {};
-  const userContent = [
-    `Tiêu đề người dùng nhập: ${metadata.title || "Không có"}`,
-    `Nguồn cuộc họp: ${metadata.source || "Không rõ"}`,
-    `Bắt đầu: ${metadata.startedAt || "Không rõ"}`,
-    `Kết thúc: ${metadata.endedAt || "Không rõ"}`,
-    "",
-    "TRANSCRIPT:",
-    transcript,
-  ].join("\n");
-
-  const model = options.model || "gemini-3.5-flash";
-  const endpoint =
-    `https://generativelanguage.googleapis.com/v1beta/models/` +
-    `${encodeURIComponent(model)}:generateContent`;
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: {
-      "x-goog-api-key": options.apiKey.trim(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      systemInstruction: {
-        parts: [{ text: SYSTEM_PROMPT }],
-      },
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: userContent }],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.2,
-        responseMimeType: "application/json",
-        responseJsonSchema: MEETING_NOTES_SCHEMA,
-      },
-    }),
+  const outputText = await requestSummaryText({
+    apiKey: options.apiKey,
+    fetchImpl: options.fetchImpl,
+    model: options.model,
+    provider: provider.id,
+    schema: MEETING_NOTES_SCHEMA,
+    systemPrompt: SYSTEM_PROMPT,
+    userContent: buildUserContent(metadata, transcript),
   });
-
-  const responseBody = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const message = responseBody.error?.message || `HTTP ${response.status}`;
-    throw new Error(`Không thể tạo tóm tắt: ${message}`);
-  }
-
-  const outputText = extractGeminiText(responseBody);
-
-  if (!outputText) {
-    const blockReason = responseBody.promptFeedback?.blockReason;
-    throw new Error(
-      blockReason
-        ? `Gemini không tạo biên bản: ${blockReason}`
-        : "Gemini không trả về nội dung biên bản.",
-    );
-  }
-
-  let notes;
-
-  try {
-    notes = JSON.parse(outputText);
-  } catch {
-    throw new Error("Nội dung biên bản từ Gemini không phải JSON hợp lệ.");
-  }
+  const notes = parseMeetingNotes(outputText, provider.label);
 
   return {
     ...notes,
@@ -148,8 +168,38 @@ async function summarizeMeeting(options = {}) {
   };
 }
 
+async function testSummaryConnection(options = {}) {
+  const provider = getSummaryProvider(options.provider || "gemini");
+  const model = options.model?.trim() || provider.defaultModel;
+
+  await summarizeMeeting({
+    apiKey: options.apiKey,
+    fetchImpl: options.fetchImpl,
+    model,
+    provider: provider.id,
+    metadata: {
+      title: "Kiểm tra kết nối AI",
+      source: "settings",
+    },
+    transcript:
+      "Đây là yêu cầu kiểm tra kết nối. Không có quyết định hoặc công việc cần thực hiện.",
+  });
+
+  return {
+    ok: true,
+    provider: provider.id,
+    providerLabel: provider.label,
+    model,
+  };
+}
+
 module.exports = {
   MEETING_NOTES_SCHEMA,
+  SYSTEM_PROMPT,
+  buildUserContent,
   extractGeminiText,
+  parseMeetingNotes,
   summarizeMeeting,
+  testSummaryConnection,
+  validateMeetingNotes,
 };

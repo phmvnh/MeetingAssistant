@@ -2,13 +2,11 @@ const api = window.meetingAssistant;
 
 const elements = {
   form: document.querySelector("#meeting-form"),
-  title: document.querySelector("#meeting-title"),
   source: document.querySelector("#meeting-source"),
   microphone: document.querySelector("#microphone"),
   keywords: document.querySelector("#keywords"),
-  systemAudio: document.querySelector("#system-audio"),
+  saveAudio: document.querySelector("#save-audio"),
   createCalendar: document.querySelector("#create-calendar"),
-  refreshDevices: document.querySelector("#refresh-devices"),
   startButton: document.querySelector("#start-button"),
   pauseButton: document.querySelector("#pause-button"),
   doneButton: document.querySelector("#done-button"),
@@ -23,14 +21,57 @@ const elements = {
   progressMessage: document.querySelector("#progress-message"),
   errorBox: document.querySelector("#error-box"),
   configWarning: document.querySelector("#config-warning"),
-  geminiStatus: document.querySelector("#gemini-status"),
-  googleStatus: document.querySelector("#google-status"),
+  whisperModelsOpenButton: document.querySelector(
+    "#whisper-models-open-button",
+  ),
+  whisperModelsDialog: document.querySelector("#whisper-models-dialog"),
+  whisperModelsClose: document.querySelector("#whisper-models-close"),
+  whisperModelsList: document.querySelector("#whisper-models-list"),
+  storageOpenButton: document.querySelector("#storage-open-button"),
+  storageDialog: document.querySelector("#storage-dialog"),
+  storageClose: document.querySelector("#storage-close"),
+  storageAudioSize: document.querySelector("#storage-audio-size"),
+  storageAudioCount: document.querySelector("#storage-audio-count"),
+  storageAudioPath: document.querySelector("#storage-audio-path"),
+  storageDocumentsSize: document.querySelector("#storage-documents-size"),
+  storageDocumentsCount: document.querySelector("#storage-documents-count"),
+  storageDocumentsPath: document.querySelector("#storage-documents-path"),
+  storageRetention: document.querySelector("#storage-retention"),
+  storageRetentionHelp: document.querySelector("#storage-retention-help"),
+  storageSaveSettings: document.querySelector("#storage-save-settings"),
+  storageOpenAudioFolder: document.querySelector("#storage-open-audio-folder"),
+  storageOpenDocumentsFolder: document.querySelector(
+    "#storage-open-documents-folder",
+  ),
+  storageClearAudio: document.querySelector("#storage-clear-audio"),
+  storageClearDocuments: document.querySelector("#storage-clear-documents"),
+  storageMessage: document.querySelector("#storage-message"),
+  summaryAiSettings: document.querySelector("#summary-ai-settings"),
+  summaryAiOpenButton: document.querySelector("#summary-ai-open-button"),
+  summaryAiClose: document.querySelector("#summary-ai-close"),
+  summaryAiProvider: document.querySelector("#summary-ai-provider"),
+  summaryAiModel: document.querySelector("#summary-ai-model"),
+  summaryAiKey: document.querySelector("#summary-ai-key"),
+  summaryAiKeyHelp: document.querySelector("#summary-ai-key-help"),
+  summaryAiStatus: document.querySelector("#summary-ai-status"),
+  summaryAiSave: document.querySelector("#summary-ai-save"),
+  summaryAiTest: document.querySelector("#summary-ai-test"),
+  summaryAiRemove: document.querySelector("#summary-ai-remove"),
+  summaryAiMessage: document.querySelector("#summary-ai-message"),
   googleAccount: document.querySelector("#google-account"),
+  googleAccountTrigger: document.querySelector("#google-account-trigger"),
+  googleAccountAvatar: document.querySelector("#google-account-avatar"),
+  googleAccountDropdown: document.querySelector("#google-account-dropdown"),
   googleAccountEmail: document.querySelector("#google-account-email"),
   googleAccountDetail: document.querySelector("#google-account-detail"),
+  googleOpenSheetButton: document.querySelector("#google-open-sheet-button"),
+  googleOpenCalendarButton: document.querySelector(
+    "#google-open-calendar-button",
+  ),
   googleAuthButton: document.querySelector("#google-auth-button"),
-  googleSwitchButton: document.querySelector("#google-switch-button"),
+  googleAuthLabel: document.querySelector("#google-auth-label"),
   googleDisconnectButton: document.querySelector("#google-disconnect-button"),
+  googleDisconnectLabel: document.querySelector("#google-disconnect-label"),
   resultPanel: document.querySelector("#result-panel"),
   resultTitle: document.querySelector("#result-title"),
   resultSummary: document.querySelector("#result-summary"),
@@ -49,8 +90,16 @@ let currentState = "IDLE";
 let timerHandle = null;
 let timerStartedAt = null;
 let latestConfigStatus = null;
+let latestSummaryAiSettings = null;
+let latestStorageStatus = null;
+let storageReady = false;
+let storageBusy = false;
+let storageBusyCount = 0;
+let storagePreferenceSequence = 0;
+let summaryAiBusy = false;
 let googleAction = null;
 let googleActionSequence = 0;
+let googleAccountMenuOpen = false;
 const transcriptItems = new Map();
 
 function downsampleBuffer(input, inputRate, outputRate) {
@@ -101,7 +150,7 @@ class AudioCapture {
     this.sending = false;
   }
 
-  async prepare({ microphoneId, includeSystemAudio }) {
+  async prepare({ microphoneId, includeMicrophone, includeSystemAudio }) {
     await this.stop();
 
     const audioConstraints = {
@@ -114,11 +163,13 @@ class AudioCapture {
       audioConstraints.deviceId = { exact: microphoneId };
     }
 
-    const microphoneStream = await navigator.mediaDevices.getUserMedia({
-      audio: audioConstraints,
-      video: false,
-    });
-    this.streams.push(microphoneStream);
+    if (includeMicrophone) {
+      const microphoneStream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraints,
+        video: false,
+      });
+      this.streams.push(microphoneStream);
+    }
 
     if (includeSystemAudio) {
       let displayStream;
@@ -146,6 +197,10 @@ class AudioCapture {
       }
 
       this.streams.push(displayStream);
+    }
+
+    if (this.streams.length === 0) {
+      throw new Error("Hãy chọn ít nhất một nguồn âm thanh.");
     }
 
     this.audioContext = new AudioContext({ sampleRate: 48000 });
@@ -218,6 +273,23 @@ class AudioCapture {
     this.startSending();
   }
 
+  async drainAndStop() {
+    if (
+      this.sending &&
+      this.processor &&
+      this.audioContext?.state === "running"
+    ) {
+      const pendingBufferMs = Math.ceil(
+        (this.processor.bufferSize / this.audioContext.sampleRate) * 1000,
+      );
+      await new Promise((resolve) => {
+        setTimeout(resolve, pendingBufferMs + 20);
+      });
+    }
+
+    await this.stop();
+  }
+
   async stop() {
     this.sending = false;
 
@@ -250,8 +322,22 @@ class AudioCapture {
 const audioCapture = new AudioCapture();
 
 function showError(message) {
-  elements.errorBox.textContent = message;
+  elements.errorBox.textContent = getUserErrorMessage(message);
   elements.errorBox.classList.remove("hidden");
+}
+
+function getUserErrorMessage(error, fallback = "Đã xảy ra lỗi. Vui lòng thử lại.") {
+  const rawMessage =
+    typeof error === "string" ? error : String(error?.message || "");
+  const message = rawMessage
+    .replace(
+      /^Error invoking remote method ['"][^'"]+['"]:\s*(?:Error:\s*)?/i,
+      "",
+    )
+    .replace(/^Error:\s*/i, "")
+    .trim();
+
+  return message || fallback;
 }
 
 function clearError() {
@@ -271,11 +357,375 @@ function meetingIsBusy() {
   );
 }
 
+function formatBytes(value) {
+  const bytes = Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
+
+  if (bytes < 1024) {
+    return `${Math.round(bytes)} B`;
+  }
+
+  const units = ["KB", "MB", "GB", "TB"];
+  let size = bytes / 1024;
+  let unitIndex = 0;
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${new Intl.NumberFormat("vi-VN", {
+    maximumFractionDigits: size >= 100 ? 0 : size >= 10 ? 1 : 2,
+  }).format(size)} ${units[unitIndex]}`;
+}
+
+function setStorageMessage(message = "", type = "") {
+  elements.storageMessage.textContent = message;
+  elements.storageMessage.className = [
+    "notice",
+    type,
+    message ? "" : "hidden",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function updateStorageRetentionHelp(settings = latestStorageStatus?.settings || {}) {
+  if (settings.initialized !== true) {
+    elements.storageRetentionHelp.textContent =
+      "Tự động dọn chưa được kích hoạt. Bấm Lưu thiết lập để xác nhận chính sách này.";
+  } else if (!elements.saveAudio.checked) {
+    elements.storageRetentionHelp.textContent =
+      "Ứng dụng hiện không lưu âm thanh thô. Chính sách này sẽ dùng khi bạn bật lưu audio.";
+  } else if (elements.storageRetention.value === "after_meeting") {
+    elements.storageRetentionHelp.textContent =
+      "Cache âm thanh sẽ được xóa ngay sau khi cuộc họp kết thúc.";
+  } else {
+    elements.storageRetentionHelp.textContent =
+      "Chỉ cache âm thanh hết hạn bị dọn; model Whisper không bao giờ bị tự động xóa.";
+  }
+}
+
+function updateStorageControlState() {
+  const locked = storageBusy || meetingIsBusy() || !storageReady;
+  elements.saveAudio.disabled = locked;
+  elements.storageRetention.disabled = locked;
+  elements.storageSaveSettings.disabled = locked;
+  // A slow disk/OneDrive scan must never trap the user inside the dialog.
+  elements.storageClose.disabled = false;
+  elements.storageOpenAudioFolder.disabled = storageBusy;
+  elements.storageOpenDocumentsFolder.disabled = storageBusy;
+  elements.storageClearAudio.disabled =
+    locked || !latestStorageStatus?.audioCache?.fileCount;
+  elements.storageClearDocuments.disabled =
+    locked || !latestStorageStatus?.localDocuments?.fileCount;
+  elements.startButton.disabled =
+    locked || !latestConfigStatus?.geminiConfigured;
+}
+
+function renderStorageStatus(status, options = {}) {
+  latestStorageStatus = status;
+  storageReady = true;
+  const audio = status.audioCache || {};
+  const documents = status.localDocuments || {};
+  const settings = status.settings || {};
+
+  elements.storageAudioSize.textContent = formatBytes(audio.bytes);
+  elements.storageAudioCount.textContent = `${audio.fileCount || 0} tệp`;
+  elements.storageAudioPath.textContent = audio.path || "";
+  elements.storageDocumentsSize.textContent = formatBytes(documents.bytes);
+  elements.storageDocumentsCount.textContent = `${documents.fileCount || 0} tệp`;
+  elements.storageDocumentsPath.textContent = documents.path || "";
+  elements.storageRetention.value = settings.audioRetention || "after_meeting";
+
+  if (!options.preserveAudioChoice && !meetingIsBusy()) {
+    elements.saveAudio.checked = Boolean(settings.saveRawAudio);
+  }
+
+  updateStorageRetentionHelp(settings);
+
+  const totalBytes = (audio.bytes || 0) + (documents.bytes || 0);
+  setChip(
+    elements.storageOpenButton,
+    true,
+    `Lưu trữ: ${formatBytes(totalBytes)}`,
+  );
+  updateStorageControlState();
+}
+
+async function loadStorageStatus(options = {}) {
+  const preferenceSequence = storagePreferenceSequence;
+
+  try {
+    const status = await api.getStorageStatus();
+    renderStorageStatus(status, {
+      ...options,
+      preserveAudioChoice:
+        options.preserveAudioChoice ||
+        preferenceSequence !== storagePreferenceSequence,
+    });
+    return status;
+  } catch (error) {
+    setChip(elements.storageOpenButton, false, "Lưu trữ: Không đọc được");
+    if (!latestStorageStatus) {
+      storageReady = false;
+    }
+    updateStorageControlState();
+    throw error;
+  }
+}
+
+function setStorageBusy(busy) {
+  storageBusyCount = Math.max(0, storageBusyCount + (busy ? 1 : -1));
+  storageBusy = storageBusyCount > 0;
+  updateStorageControlState();
+}
+
+async function saveStorageSettings(options = {}) {
+  const selectedRetention =
+    elements.storageRetention.value ||
+    latestStorageStatus?.settings?.audioRetention ||
+    "after_meeting";
+  setStorageBusy(true);
+
+  try {
+    const freshStatus = await api.getStorageStatus();
+    renderStorageStatus(freshStatus, { preserveAudioChoice: true });
+    elements.storageRetention.value = selectedRetention;
+    updateStorageRetentionHelp(freshStatus.settings);
+    const currentSettings = freshStatus.settings || {};
+    const audio = freshStatus.audioCache || {};
+    const policyWillChange =
+      currentSettings.initialized !== true ||
+      currentSettings.audioRetention !== selectedRetention;
+
+    if (policyWillChange && (audio.fileCount || 0) > 0) {
+      const confirmed = window.confirm(
+        `Áp dụng chính sách tự động dọn cho ${formatBytes(audio.bytes || 0)} cache âm thanh (${audio.fileCount} tệp)?\n\n` +
+          "Cache đã hết thời hạn theo lựa chọn mới có thể được xóa ngay. Model Whisper không bị ảnh hưởng.",
+      );
+      if (!confirmed) {
+        return freshStatus;
+      }
+    }
+
+    const status = await api.saveStorageSettings({
+      audioRetention: selectedRetention,
+      confirmCleanup: true,
+    });
+    renderStorageStatus(status);
+    if (!options.silent) {
+      setStorageMessage("Đã lưu thiết lập dung lượng trên thiết bị.", "success");
+    }
+    return status;
+  } catch (error) {
+    const message = getUserErrorMessage(error);
+    if (options.silent) {
+      showError(message);
+    } else {
+      setStorageMessage(message, "error");
+    }
+    throw error;
+  } finally {
+    setStorageBusy(false);
+  }
+}
+
+async function saveAudioPreference() {
+  const preferenceSequence = ++storagePreferenceSequence;
+  const saveRawAudio = elements.saveAudio.checked;
+  setStorageBusy(true);
+
+  try {
+    const status = await api.saveStorageSettings({ saveRawAudio });
+    renderStorageStatus(status, {
+      preserveAudioChoice: preferenceSequence !== storagePreferenceSequence,
+    });
+  } catch (error) {
+    showError(getUserErrorMessage(error));
+    if (preferenceSequence === storagePreferenceSequence) {
+      elements.saveAudio.checked = Boolean(
+        latestStorageStatus?.settings?.saveRawAudio,
+      );
+    }
+    throw error;
+  } finally {
+    setStorageBusy(false);
+  }
+}
+
+async function openStorageDialog() {
+  setStorageMessage();
+  if (!elements.storageDialog.open) {
+    elements.storageDialog.showModal();
+  }
+
+  setStorageBusy(true);
+  try {
+    await loadStorageStatus({ preserveAudioChoice: true });
+  } catch (error) {
+    setStorageMessage(getUserErrorMessage(error), "error");
+  } finally {
+    setStorageBusy(false);
+  }
+}
+
+function closeStorageDialog() {
+  if (elements.storageDialog.open) {
+    elements.storageDialog.close();
+  }
+}
+
+async function clearAudioCache() {
+  setStorageMessage();
+  setStorageBusy(true);
+
+  try {
+    const freshStatus = await api.getStorageStatus();
+    renderStorageStatus(freshStatus, { preserveAudioChoice: true });
+    const bytes = freshStatus.audioCache?.bytes || 0;
+    const fileCount = freshStatus.audioCache?.fileCount || 0;
+
+    if (!fileCount) {
+      setStorageMessage("Cache âm thanh hiện đang trống.", "success");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Xóa ${formatBytes(bytes)} cache âm thanh (${fileCount} tệp) khỏi máy?\n\n` +
+        "Model Whisper và biên bản cục bộ sẽ được giữ nguyên. Thao tác này không thể hoàn tác.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const result = await api.clearAudioCache();
+    renderStorageStatus(result.status, { preserveAudioChoice: true });
+    const failed = result.cleanup?.failedEntries?.length || 0;
+    setStorageMessage(
+      failed
+        ? `Đã giải phóng ${formatBytes(result.cleanup.bytesFreed)}, nhưng còn ${failed} mục không thể xóa.`
+        : `Đã giải phóng ${formatBytes(result.cleanup?.bytesFreed || 0)} cache âm thanh.`,
+      failed ? "warning" : "success",
+    );
+  } catch (error) {
+    setStorageMessage(getUserErrorMessage(error), "error");
+  } finally {
+    setStorageBusy(false);
+  }
+}
+
+async function clearLocalDocuments() {
+  setStorageMessage();
+  setStorageBusy(true);
+
+  try {
+    const freshStatus = await api.getStorageStatus();
+    renderStorageStatus(freshStatus, { preserveAudioChoice: true });
+    const bytes = freshStatus.localDocuments?.bytes || 0;
+    const fileCount = freshStatus.localDocuments?.fileCount || 0;
+
+    if (!fileCount) {
+      setStorageMessage("Chưa có biên bản cục bộ để xóa.", "success");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Xóa ${formatBytes(bytes)} biên bản cục bộ (${fileCount} tệp) khỏi máy?\n\n` +
+        "Nếu thư mục nằm trong OneDrive, thao tác xóa có thể được đồng bộ. Google Docs không bị ảnh hưởng.",
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const result = await api.clearLocalDocuments();
+    renderStorageStatus(result.status, { preserveAudioChoice: true });
+    const failed = result.cleanup?.failedFiles?.length || 0;
+    elements.openLocalButton.disabled =
+      !result.latestLocalDocumentAvailable;
+    setStorageMessage(
+      failed
+        ? `Đã giải phóng ${formatBytes(result.cleanup.bytesFreed)}, nhưng còn ${failed} tệp không thể xóa.`
+        : `Đã giải phóng ${formatBytes(result.cleanup?.bytesFreed || 0)} biên bản cục bộ.`,
+      failed ? "warning" : "success",
+    );
+  } catch (error) {
+    setStorageMessage(getUserErrorMessage(error), "error");
+  } finally {
+    setStorageBusy(false);
+  }
+}
+
+async function openStorageFolder(openFolder) {
+  setStorageMessage();
+  try {
+    await openFolder();
+  } catch (error) {
+    setStorageMessage(getUserErrorMessage(error), "error");
+  }
+}
+
 function isCurrentGoogleAction(action) {
   return googleAction?.id === action.id;
 }
 
+function getGoogleAccountInitial(email, fallback = "G") {
+  const normalized = String(email || "")
+    .split("@")[0]
+    .replace(/[^a-z0-9]/gi, "");
+  return (normalized[0] || fallback).toUpperCase();
+}
+
+function setGoogleAccountMenuOpen(open, options = {}) {
+  const accountVisible = !elements.googleAccount.classList.contains("hidden");
+  googleAccountMenuOpen = Boolean(open) && accountVisible;
+  elements.googleAccountDropdown.classList.toggle(
+    "hidden",
+    !googleAccountMenuOpen,
+  );
+  elements.googleAccount.classList.toggle("menu-open", googleAccountMenuOpen);
+  elements.googleAccountTrigger.setAttribute(
+    "aria-expanded",
+    String(googleAccountMenuOpen),
+  );
+
+  if (googleAccountMenuOpen && options.focusFirst) {
+    elements.googleAccountDropdown
+      .querySelector(".google-menu-item:not(.hidden):not(:disabled)")
+      ?.focus();
+  } else if (!googleAccountMenuOpen && options.restoreFocus) {
+    elements.googleAccountTrigger.focus();
+  }
+}
+
+function getEnabledGoogleMenuItems() {
+  return Array.from(
+    elements.googleAccountDropdown.querySelectorAll(
+      ".google-menu-item:not(.hidden):not(:disabled)",
+    ),
+  );
+}
+
+async function openGoogleWorkspaceShortcut(button, openShortcut) {
+  setGoogleAccountMenuOpen(false);
+  clearError();
+  button.disabled = true;
+
+  try {
+    await openShortcut();
+  } catch (error) {
+    showError(getUserErrorMessage(error));
+  } finally {
+    if (latestConfigStatus) {
+      renderGoogleAccount(latestConfigStatus);
+    }
+  }
+}
+
 function renderGoogleAccount(status) {
+  if (!status) {
+    return;
+  }
+
   const isOauth = status.googleAuthMode === "oauth";
   const isServiceAccount = status.googleAuthMode === "service_account";
   const needsReauth = Boolean(status.googleNeedsReauth);
@@ -286,70 +736,55 @@ function renderGoogleAccount(status) {
   const disconnecting = googleAction?.type === "disconnect";
 
   if (isOauth) {
-    let label = "Google chưa đăng nhập";
-
-    if (!status.googleCredentialsPresent) {
-      label = "Thiếu Google OAuth";
-    } else if (needsReauth) {
-      label = "Google cần kết nối lại";
-    } else if (isConnected) {
-      label = "Google đã kết nối";
-    }
-
-    setChip(
-      elements.googleStatus,
-      isConnected && status.googleCredentialsPresent,
-      label,
-    );
-
     elements.googleAccountEmail.textContent =
-      accountEmail || (isConnected ? "Tài khoản Google" : "Chưa có tài khoản");
+      accountEmail || (isConnected ? "Tài khoản Google" : "Chưa đăng nhập");
     elements.googleAccountDetail.textContent = needsReauth
       ? "Phiên đăng nhập đã hết hạn"
       : isConnected
         ? "Docs, Sheets và Calendar"
         : "Đăng nhập để đồng bộ biên bản";
     elements.googleAccount.classList.remove("hidden");
-    elements.googleAuthButton.textContent = authorizing
+    elements.googleAuthLabel.textContent = authorizing
       ? "Mở lại đăng nhập Google"
       : needsReauth
         ? "Kết nối lại Google"
         : "Đăng nhập Google";
-    elements.googleSwitchButton.textContent = authorizing
-      ? "Mở lại trang chọn tài khoản"
-      : "Đổi tài khoản";
+    elements.googleDisconnectLabel.textContent = disconnecting
+      ? "Đang đăng xuất..."
+      : "Đăng xuất";
     elements.googleAuthButton.classList.toggle("hidden", isConnected);
-    elements.googleSwitchButton.classList.toggle("hidden", !isConnected);
     elements.googleDisconnectButton.classList.toggle("hidden", !isConnected);
   } else if (isServiceAccount) {
-    const ready =
-      Boolean(status.googleAuthorized) && status.googleCredentialsPresent;
-    setChip(
-      elements.googleStatus,
-      ready,
-      ready ? "Google service account sẵn sàng" : "Thiếu service account",
-    );
     elements.googleAccountEmail.textContent = accountEmail || "Service account";
     elements.googleAccountDetail.textContent =
       "Tài khoản kỹ thuật · không cần đăng nhập";
     elements.googleAccount.classList.remove("hidden");
     elements.googleAuthButton.classList.add("hidden");
-    elements.googleSwitchButton.classList.add("hidden");
     elements.googleDisconnectButton.classList.add("hidden");
   } else {
-    setChip(elements.googleStatus, false, "Cấu hình Google không hợp lệ");
     elements.googleAccount.classList.add("hidden");
     elements.googleAuthButton.classList.add("hidden");
-    elements.googleSwitchButton.classList.add("hidden");
     elements.googleDisconnectButton.classList.add("hidden");
+    setGoogleAccountMenuOpen(false);
   }
 
   const actionsDisabled = meetingIsBusy() || disconnecting;
   elements.googleAuthButton.disabled =
     actionsDisabled || !status.googleCredentialsPresent;
-  elements.googleSwitchButton.disabled = actionsDisabled;
   elements.googleDisconnectButton.disabled =
     meetingIsBusy() || Boolean(googleAction);
+  elements.googleOpenSheetButton.disabled = !isConnected;
+  elements.googleOpenCalendarButton.disabled = !isConnected;
+  elements.googleAccountAvatar.textContent = getGoogleAccountInitial(
+    accountEmail,
+    isServiceAccount ? "S" : "G",
+  );
+  const accountLabel = accountEmail || (isConnected ? "Google" : "chưa đăng nhập");
+  elements.googleAccountTrigger.setAttribute(
+    "aria-label",
+    `Mở menu tài khoản Google: ${accountLabel}`,
+  );
+  elements.googleAccountTrigger.title = accountEmail || "Tài khoản Google";
 }
 
 async function loadConfigStatus(expectedActionId = null) {
@@ -364,17 +799,17 @@ async function loadConfigStatus(expectedActionId = null) {
 
   latestConfigStatus = status;
   setChip(
-    elements.geminiStatus,
+    elements.summaryAiOpenButton,
     status.geminiConfigured,
-    status.geminiConfigured ? "Gemini đã cấu hình" : "Thiếu Gemini key",
+    "AI Summary",
   );
   renderGoogleAccount(status);
-  elements.startButton.disabled = !status.geminiConfigured;
+  updateStorageControlState();
 
   const warnings = [];
 
   if (!status.geminiConfigured) {
-    warnings.push("Thêm GEMINI_API_KEY vào .env để bắt đầu nhận dạng âm thanh.");
+    warnings.push("Mở AI Summary và lưu API key Gemini để bắt đầu nhận dạng âm thanh.");
   }
 
   if (!status.googleCredentialsPresent) {
@@ -414,6 +849,198 @@ async function loadConfigStatus(expectedActionId = null) {
   return status;
 }
 
+function getSummaryProviderSettings(providerId) {
+  return latestSummaryAiSettings?.providers.find(
+    (provider) => provider.id === providerId,
+  );
+}
+
+function setSummaryAiMessage(message = "", type = "") {
+  elements.summaryAiMessage.textContent = message;
+  elements.summaryAiMessage.className = [
+    "notice",
+    type,
+    message ? "" : "hidden",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function updateSummaryAiActionState() {
+  const provider = getSummaryProviderSettings(
+    elements.summaryAiProvider.value,
+  );
+
+  elements.summaryAiProvider.disabled = summaryAiBusy;
+  elements.summaryAiModel.disabled = summaryAiBusy;
+  elements.summaryAiKey.disabled = summaryAiBusy;
+  elements.summaryAiSave.disabled = summaryAiBusy;
+  elements.summaryAiTest.disabled = summaryAiBusy;
+  elements.summaryAiRemove.disabled =
+    summaryAiBusy || !provider?.configured;
+}
+
+function setSummaryAiBusy(busy) {
+  summaryAiBusy = busy;
+  updateSummaryAiActionState();
+}
+
+function renderSummaryProviderForm(providerId) {
+  const provider =
+    getSummaryProviderSettings(providerId) ||
+    latestSummaryAiSettings?.providers[0];
+
+  if (!provider) {
+    return;
+  }
+
+  elements.summaryAiProvider.value = provider.id;
+  elements.summaryAiModel.replaceChildren();
+
+  for (const model of provider.models || []) {
+    const option = document.createElement("option");
+    option.value = model;
+    option.textContent =
+      model === provider.defaultModel ? `${model} (mặc định)` : model;
+    elements.summaryAiModel.append(option);
+  }
+
+  elements.summaryAiModel.value = provider.models.includes(provider.model)
+    ? provider.model
+    : provider.defaultModel;
+  elements.summaryAiKey.value = "";
+
+  const isActive =
+    provider.id === latestSummaryAiSettings.activeProvider;
+  elements.summaryAiStatus.className = "settings-status";
+
+  if (provider.configured && isActive) {
+    elements.summaryAiStatus.textContent = "Đang dùng";
+    elements.summaryAiStatus.classList.add("configured");
+  } else if (provider.configured) {
+    elements.summaryAiStatus.textContent = "Đã lưu";
+    elements.summaryAiStatus.classList.add("configured");
+  } else {
+    elements.summaryAiStatus.textContent = "Chưa cấu hình";
+    elements.summaryAiStatus.classList.add("missing");
+  }
+
+  if (provider.configured) {
+    elements.summaryAiKey.placeholder =
+      "Đã lưu an toàn — để trống để giữ key hiện tại";
+    elements.summaryAiKeyHelp.textContent =
+      isActive
+        ? `${provider.label} đang được dùng để tóm tắt.`
+        : `Key ${provider.label} đã lưu. Bấm Lưu để chọn làm AI tóm tắt.`;
+  } else {
+    elements.summaryAiKey.placeholder = `Nhập API key cho ${provider.label}`;
+    elements.summaryAiKeyHelp.textContent =
+      "Khóa API được mã hóa an toàn trên máy tính của bạn.";
+  }
+
+  updateSummaryAiActionState();
+}
+
+function renderSummaryAiSettings(settings) {
+  latestSummaryAiSettings = settings;
+  renderSummaryProviderForm(settings.activeProvider);
+
+  if (settings.error) {
+    setSummaryAiMessage(settings.error, "error");
+    openSummaryAiSettings();
+  } else {
+    setSummaryAiMessage();
+  }
+}
+
+function openSummaryAiSettings() {
+  if (!elements.summaryAiSettings.open) {
+    elements.summaryAiSettings.showModal();
+  }
+}
+
+function closeSummaryAiSettings() {
+  elements.summaryAiSettings.close();
+}
+
+async function loadSummaryAiSettings() {
+  const settings = await api.getSummaryAiSettings();
+  renderSummaryAiSettings(settings);
+  return settings;
+}
+
+async function saveSummaryAiSettings() {
+  setSummaryAiMessage();
+  setSummaryAiBusy(true);
+
+  try {
+    const settings = await api.saveSummaryAiSettings({
+      provider: elements.summaryAiProvider.value,
+      model: elements.summaryAiModel.value,
+      apiKey: elements.summaryAiKey.value,
+    });
+    renderSummaryAiSettings(settings);
+    const provider = getSummaryProviderSettings(settings.activeProvider);
+    setSummaryAiMessage(
+      `Đã lưu ${provider?.label || "cấu hình AI"} bằng kho mã hóa của thiết bị.`,
+      "success",
+    );
+  } catch (error) {
+    setSummaryAiMessage(getUserErrorMessage(error), "error");
+  } finally {
+    setSummaryAiBusy(false);
+  }
+}
+
+async function testSummaryAiConnection() {
+  setSummaryAiMessage(
+    "Đang gửi một request nhỏ để kiểm tra key và model…",
+    "warning",
+  );
+  setSummaryAiBusy(true);
+
+  try {
+    const result = await api.testSummaryAiConnection({
+      provider: elements.summaryAiProvider.value,
+      model: elements.summaryAiModel.value,
+      apiKey: elements.summaryAiKey.value,
+    });
+    setSummaryAiMessage(result.message, "success");
+  } catch (error) {
+    setSummaryAiMessage(getUserErrorMessage(error), "error");
+  } finally {
+    setSummaryAiBusy(false);
+  }
+}
+
+async function removeSummaryAiSettings() {
+  const provider = getSummaryProviderSettings(
+    elements.summaryAiProvider.value,
+  );
+
+  if (
+    !provider?.configured ||
+    !window.confirm(`Xóa API key đã lưu của ${provider.label}?`)
+  ) {
+    return;
+  }
+
+  setSummaryAiBusy(true);
+
+  try {
+    const settings = await api.removeSummaryAiSettings(provider.id);
+    renderSummaryAiSettings(settings);
+    setSummaryAiMessage(
+      `Đã xóa API key của ${provider.label} khỏi thiết bị.`,
+      "success",
+    );
+  } catch (error) {
+    setSummaryAiMessage(getUserErrorMessage(error), "error");
+  } finally {
+    setSummaryAiBusy(false);
+  }
+}
+
 async function refreshMicrophones() {
   const previousValue = elements.microphone.value;
   const devices = await navigator.mediaDevices.enumerateDevices();
@@ -448,6 +1075,7 @@ function setFormDisabled(disabled) {
     });
 
   if (!disabled) {
+    updateStorageControlState();
     loadConfigStatus().catch(showError);
   }
 }
@@ -514,7 +1142,7 @@ function updateControls(state) {
     CONNECTING: "Đang kết nối…",
     LISTENING: "Đang lắng nghe",
     PAUSED: "Đã tạm dừng",
-    FINALIZING: "Đang tạo biên bản",
+    FINALIZING: "Đang hoàn thiện và tóm tắt nội dung…",
     COMPLETED: "Đã hoàn tất",
     FAILED: "Xử lý thất bại",
     CANCELLED: "Đã hủy",
@@ -525,6 +1153,7 @@ function updateControls(state) {
   if (latestConfigStatus) {
     renderGoogleAccount(latestConfigStatus);
   }
+  updateStorageControlState();
 
   if (["COMPLETED", "FAILED", "CANCELLED"].includes(currentState)) {
     stopTimer();
@@ -545,6 +1174,7 @@ function addListItems(container, items, emptyText) {
 
 function renderResult(result) {
   const { notes } = result;
+  elements.openLocalButton.disabled = false;
   elements.resultTitle.textContent =
     result.meeting?.title?.trim() || notes.title || "Biên bản cuộc họp";
   elements.resultSummary.textContent = notes.summary || "Không có tóm tắt.";
@@ -591,9 +1221,16 @@ elements.form.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearError();
 
+  if (!storageReady) {
+    showError(
+      "Chưa đọc xong thiết lập lưu trữ. Hãy mở Quản lý dung lượng và thử lại.",
+    );
+    return;
+  }
+
   const metadata = {
-    title: elements.title.value,
     source: elements.source.value,
+    saveRawAudio: elements.saveAudio.checked,
     createCalendarIfMissing: elements.createCalendar.checked,
     consentConfirmed: true,
     keywords: elements.keywords.value
@@ -609,7 +1246,8 @@ elements.form.addEventListener("submit", async (event) => {
   try {
     await audioCapture.prepare({
       microphoneId: elements.microphone.value,
-      includeSystemAudio: elements.systemAudio.checked,
+      includeMicrophone: ["microphone", "both"].includes(elements.source.value),
+      includeSystemAudio: ["system", "both"].includes(elements.source.value),
     });
     await api.startMeeting(metadata);
     audioCapture.startSending();
@@ -640,16 +1278,24 @@ elements.pauseButton.addEventListener("click", async () => {
 
 elements.doneButton.addEventListener("click", async () => {
   clearError();
-  elements.doneButton.disabled = true;
-  elements.pauseButton.disabled = true;
-  elements.cancelButton.disabled = true;
-  await audioCapture.stop();
+  updateControls("FINALIZING");
+  elements.progressMessage.textContent =
+    "Đang xử lý phần âm thanh cuối và hoàn thiện transcript…";
+  elements.progressBox.classList.remove("hidden");
 
   try {
+    try {
+      await audioCapture.drainAndStop();
+    } catch (error) {
+      console.warn("Không thể đóng audio capture hoàn toàn:", error.message);
+    }
+
     const result = await api.finishMeeting();
     renderResult(result);
   } catch (error) {
     showError(error.message);
+  } finally {
+    loadStorageStatus().catch((error) => showError(error.message));
   }
 });
 
@@ -661,20 +1307,51 @@ elements.cancelButton.addEventListener("click", async () => {
     await api.cancelMeeting();
   } catch (error) {
     showError(error.message);
+  } finally {
+    loadStorageStatus().catch((error) => showError(error.message));
   }
-});
-
-elements.refreshDevices.addEventListener("click", () => {
-  refreshMicrophones().catch((error) => showError(error.message));
 });
 
 elements.source.addEventListener("change", () => {
-  if (["meet", "teams"].includes(elements.source.value)) {
-    elements.systemAudio.checked = true;
-  }
+  elements.microphone.disabled = elements.source.value === "system";
 });
 
+elements.microphone.disabled = elements.source.value === "system";
+
+elements.saveAudio.addEventListener("change", () => {
+  saveAudioPreference().catch(() => {});
+});
+
+elements.storageRetention.addEventListener("change", () => {
+  updateStorageRetentionHelp();
+});
+
+elements.storageOpenButton.addEventListener("click", openStorageDialog);
+elements.storageClose.addEventListener("click", closeStorageDialog);
+elements.storageSaveSettings.addEventListener("click", () => {
+  saveStorageSettings().catch(() => {});
+});
+elements.storageClearAudio.addEventListener("click", clearAudioCache);
+elements.storageClearDocuments.addEventListener("click", clearLocalDocuments);
+elements.storageOpenAudioFolder.addEventListener("click", () => {
+  openStorageFolder(() => api.openAudioCacheFolder());
+});
+elements.storageOpenDocumentsFolder.addEventListener("click", () => {
+  openStorageFolder(() => api.openLocalDocumentsFolder());
+});
+
+elements.summaryAiProvider.addEventListener("change", () => {
+  renderSummaryProviderForm(elements.summaryAiProvider.value);
+  setSummaryAiMessage();
+});
+elements.summaryAiOpenButton.addEventListener("click", openSummaryAiSettings);
+elements.summaryAiClose.addEventListener("click", closeSummaryAiSettings);
+elements.summaryAiSave.addEventListener("click", saveSummaryAiSettings);
+elements.summaryAiTest.addEventListener("click", testSummaryAiConnection);
+elements.summaryAiRemove.addEventListener("click", removeSummaryAiSettings);
+
 async function authorizeGoogleAccount() {
+  setGoogleAccountMenuOpen(false);
   clearError();
   const action = {
     type: "authorize",
@@ -705,9 +1382,71 @@ async function authorizeGoogleAccount() {
 }
 
 elements.googleAuthButton.addEventListener("click", authorizeGoogleAccount);
-elements.googleSwitchButton.addEventListener("click", authorizeGoogleAccount);
+
+elements.googleAccountTrigger.addEventListener("click", () => {
+  setGoogleAccountMenuOpen(!googleAccountMenuOpen);
+});
+
+elements.googleAccountTrigger.addEventListener("keydown", (event) => {
+  if (event.key !== "ArrowDown") {
+    return;
+  }
+
+  event.preventDefault();
+  setGoogleAccountMenuOpen(true, { focusFirst: true });
+});
+
+elements.googleAccountDropdown.addEventListener("keydown", (event) => {
+  if (!googleAccountMenuOpen || !["ArrowDown", "ArrowUp"].includes(event.key)) {
+    return;
+  }
+
+  const menuItems = getEnabledGoogleMenuItems();
+  if (!menuItems.length) {
+    return;
+  }
+
+  event.preventDefault();
+  const currentIndex = menuItems.indexOf(document.activeElement);
+  const direction = event.key === "ArrowDown" ? 1 : -1;
+  const nextIndex =
+    currentIndex === -1
+      ? direction === 1
+        ? 0
+        : menuItems.length - 1
+      : (currentIndex + direction + menuItems.length) % menuItems.length;
+  menuItems[nextIndex].focus();
+});
+
+document.addEventListener("click", (event) => {
+  if (
+    googleAccountMenuOpen &&
+    !elements.googleAccount.contains(event.target)
+  ) {
+    setGoogleAccountMenuOpen(false);
+  }
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && googleAccountMenuOpen) {
+    setGoogleAccountMenuOpen(false, { restoreFocus: true });
+  }
+});
+
+elements.googleOpenSheetButton.addEventListener("click", () => {
+  openGoogleWorkspaceShortcut(elements.googleOpenSheetButton, () =>
+    api.openAccountGoogleSheet(),
+  );
+});
+
+elements.googleOpenCalendarButton.addEventListener("click", () => {
+  openGoogleWorkspaceShortcut(elements.googleOpenCalendarButton, () =>
+    api.openAccountGoogleCalendar(),
+  );
+});
 
 elements.googleDisconnectButton.addEventListener("click", async () => {
+  setGoogleAccountMenuOpen(false);
   clearError();
   const action = {
     type: "disconnect",
@@ -753,6 +1492,151 @@ elements.openCalendarButton.addEventListener("click", () => {
   api.openCalendar().catch((error) => showError(error.message));
 });
 
+elements.whisperModelsOpenButton?.addEventListener("click", openWhisperModelsDialog);
+elements.whisperModelsClose?.addEventListener("click", closeWhisperModelsDialog);
+
+let whisperModels = [];
+
+async function loadWhisperModels() {
+  if (!api?.listWhisperModels) return;
+  try {
+    whisperModels = await api.listWhisperModels();
+    renderWhisperModels();
+    updateWhisperStatusButton();
+  } catch (err) {
+    console.error("Lỗi tải danh sách model Whisper:", err);
+  }
+}
+
+function updateWhisperStatusButton() {
+  if (!elements.whisperModelsOpenButton) return;
+  const hasDownloaded = whisperModels.some((m) => m.downloaded);
+  if (hasDownloaded) {
+    const active =
+      whisperModels.find((m) => m.isActive && m.downloaded) ||
+      whisperModels.find((m) => m.downloaded);
+    const shortName = active ? active.name.split(" ")[0] : "Sẵn sàng";
+    elements.whisperModelsOpenButton.textContent = `Transcript: ${shortName}`;
+    elements.whisperModelsOpenButton.className =
+      "status-chip status-button status-ready";
+  } else {
+    elements.whisperModelsOpenButton.textContent = "Transcript: Chưa có model";
+    elements.whisperModelsOpenButton.className =
+      "status-chip status-button status-pending";
+  }
+}
+
+function renderWhisperModels() {
+  if (!elements.whisperModelsList) return;
+  elements.whisperModelsList.innerHTML = "";
+
+  for (const model of whisperModels) {
+    const card = document.createElement("div");
+    card.className = `whisper-model-card ${model.isActive ? "active" : ""}`;
+
+    const badges = [];
+    if (model.recommended) {
+      badges.push('<span class="model-badge recommended">Khuyến nghị</span>');
+    }
+    if (model.downloaded) {
+      badges.push('<span class="model-badge downloaded">Đã tải</span>');
+    }
+    if (model.isActive) {
+      badges.push('<span class="model-badge active-badge">Đang dùng</span>');
+    }
+
+    card.innerHTML = `
+      <div class="whisper-model-header">
+        <span class="whisper-model-title">${model.name}</span>
+        <div class="whisper-model-meta">
+          <span>${model.sizeDisplay}</span>
+          ${badges.join(" ")}
+        </div>
+      </div>
+      <div class="whisper-model-desc">${model.description}</div>
+      <div class="whisper-model-actions" id="actions-${model.id}">
+        ${
+          model.downloading
+            ? `
+            <div class="whisper-progress-container">
+              <div class="whisper-progress-fill" style="width: ${model.progress}%"></div>
+            </div>
+            <span style="font-size: 11px; min-width: 35px;">${model.progress}%</span>
+            <button class="text-button danger compact" data-action="cancel" data-id="${model.id}">Hủy</button>
+          `
+            : model.downloaded
+              ? `
+            ${
+              !model.isActive
+                ? `<button class="primary-button compact" data-action="select" data-id="${model.id}">Chọn sử dụng</button>`
+                : ""
+            }
+            <button class="text-button danger compact" data-action="delete" data-id="${model.id}">Xóa</button>
+          `
+              : `<button class="primary-button compact" data-action="download" data-id="${model.id}">Tải về (${model.sizeDisplay})</button>`
+        }
+      </div>
+    `;
+
+    elements.whisperModelsList.appendChild(card);
+  }
+
+  elements.whisperModelsList
+    .querySelectorAll("button[data-action]")
+    .forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        const action = e.currentTarget.dataset.action;
+        const modelId = e.currentTarget.dataset.id;
+        if (action === "download") {
+          btn.disabled = true;
+          btn.textContent = "Đang tải…";
+          try {
+            await api.downloadWhisperModel(modelId);
+            await loadWhisperModels();
+          } catch (err) {
+            showError(`Lỗi tải model: ${err.message}`);
+            await loadWhisperModels();
+          }
+        } else if (action === "cancel") {
+          await api.cancelWhisperDownload(modelId);
+          await loadWhisperModels();
+        } else if (action === "delete") {
+          if (confirm("Bạn có chắc muốn xóa model này?")) {
+            await api.deleteWhisperModel(modelId);
+            await loadWhisperModels();
+          }
+        } else if (action === "select") {
+          await api.selectWhisperModel(modelId);
+          await loadWhisperModels();
+        }
+      });
+    });
+}
+
+function openWhisperModelsDialog() {
+  loadWhisperModels();
+  if (typeof elements.whisperModelsDialog?.showModal === "function") {
+    elements.whisperModelsDialog.showModal();
+  }
+}
+
+function closeWhisperModelsDialog() {
+  if (elements.whisperModelsDialog?.open) {
+    elements.whisperModelsDialog.close();
+  }
+}
+
+if (api?.onWhisperDownloadProgress) {
+  api.onWhisperDownloadProgress((info) => {
+    const model = whisperModels.find((m) => m.id === info.modelId);
+    if (model) {
+      model.downloading = true;
+      model.progress = info.progress;
+      renderWhisperModels();
+    }
+  });
+}
+
 api.onTranscription((event) => {
   if (event.type === "delta" || event.type === "completed") {
     transcriptItems.set(event.item.itemId, event.item);
@@ -760,6 +1644,10 @@ api.onTranscription((event) => {
   }
 
   if (event.type === "error") {
+    showError(event.message);
+  }
+
+  if (event.type === "warning") {
     showError(event.message);
   }
 
@@ -772,11 +1660,31 @@ api.onMeetingState((meeting) => {
   updateControls(meeting?.state || "IDLE");
 });
 
-api.onProgress(({ message }) => {
+api.onProgress(({ step, message }) => {
   elements.progressMessage.textContent = message;
   elements.progressBox.classList.remove("hidden");
+
+  const progressLabels = {
+    transcript: "Đang hoàn thiện transcript…",
+    summarizing: "Đang tóm tắt nội dung cuộc họp…",
+    "saving-local": "Đang tạo biên bản…",
+    "google-auth": "Đang đồng bộ biên bản…",
+    "google-docs": "Đang đồng bộ biên bản…",
+    "google-calendar": "Đang đồng bộ biên bản…",
+    "google-sheets": "Đang đồng bộ biên bản…",
+  };
+
+  if (currentState === "FINALIZING" && progressLabels[step]) {
+    elements.liveStatus.textContent = progressLabels[step];
+  }
 });
 
-Promise.all([loadConfigStatus(), refreshMicrophones()]).catch((error) => {
+Promise.all([
+  loadConfigStatus(),
+  loadStorageStatus(),
+  loadSummaryAiSettings(),
+  loadWhisperModels(),
+  refreshMicrophones(),
+]).catch((error) => {
   showError(error.message);
 });

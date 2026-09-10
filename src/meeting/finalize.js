@@ -21,10 +21,27 @@ function createFallbackNotes(meeting) {
   };
 }
 
+function resolveSummaryConfig(summaryConfig, geminiConfig) {
+  if (summaryConfig) {
+    return summaryConfig;
+  }
+
+  if (geminiConfig) {
+    return {
+      provider: "gemini",
+      apiKey: geminiConfig.apiKey,
+      model: geminiConfig.summaryModel,
+    };
+  }
+
+  return {};
+}
+
 async function finalizeMeeting(options) {
   const {
     meeting,
     transcript,
+    summaryConfig,
     geminiConfig,
     googleConfig,
     outputDirectory,
@@ -32,14 +49,24 @@ async function finalizeMeeting(options) {
     onProgress = () => {},
   } = options;
   const warnings = [];
+  const resolvedSummaryConfig = resolveSummaryConfig(
+    summaryConfig,
+    geminiConfig,
+  );
 
-  onProgress("summarizing", "Đang tạo tóm tắt và công việc cần thực hiện…");
+  if (resolvedSummaryConfig.warning) {
+    warnings.push(resolvedSummaryConfig.warning);
+  }
+
+  onProgress("summarizing", "Đang tóm tắt nội dung cuộc họp…");
   let notes;
 
   try {
     notes = await summarizeMeeting({
-      apiKey: geminiConfig.apiKey,
-      model: geminiConfig.summaryModel,
+      provider: resolvedSummaryConfig.provider,
+      apiKey: resolvedSummaryConfig.apiKey,
+      model: resolvedSummaryConfig.model,
+      configurationError: resolvedSummaryConfig.configurationError,
       transcript,
       metadata: meeting,
     });
@@ -102,12 +129,13 @@ async function finalizeMeeting(options) {
     }
   }
 
-  if (!googleConnectionLost && googleConfig.calendarId) {
+  if (!googleConnectionLost) {
     try {
       onProgress("google-calendar", "Đang cập nhật Google Calendar…");
       result.calendar = await syncMeetingCalendar({
         auth,
         calendarId: googleConfig.calendarId,
+        calendarName: googleConfig.calendarName,
         timeZone: googleConfig.timeZone,
         meeting,
         notes,
@@ -157,4 +185,5 @@ async function finalizeMeeting(options) {
 module.exports = {
   createFallbackNotes,
   finalizeMeeting,
+  resolveSummaryConfig,
 };
